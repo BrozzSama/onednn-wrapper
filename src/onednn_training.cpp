@@ -14,519 +14,467 @@
 * limitations under the License.
 *******************************************************************************/
 
-/// @example getting_started.cpp
-/// @copybrief getting_started_cpp
-/// > Annotated version: @ref getting_started_cpp
+/// @example cnn_training_bf16.cpp
+/// @copybrief cnn_training_bf16_cpp
+///
+/// @page cnn_training_bf16_cpp CNN bf16 training example
+/// This C++ API example demonstrates how to build an AlexNet model training
+/// using the bfloat16 data type.
+///
+/// The example implements a few layers from AlexNet model.
+///
+/// @include cnn_training_bf16.cpp
 
+#include <cassert>
 #include <cmath>
-#include <numeric>
+#include <iostream>
 #include <stdexcept>
-#include <vector>
 
 #include "oneapi/dnnl/dnnl.hpp"
-#include "oneapi/dnnl/dnnl_debug.h"
 
 #include "example_utils.hpp"
 
 using namespace dnnl;
-// [Prologue]
 
-/// @page getting_started_cpp Getting started
-///
-/// This C++ API example demonstrates the basics of the oneDNN programming model.
-///
-/// > Example code: @ref getting_started.cpp
-///
-/// This C++ API example demonstrates the basics of the oneDNN programming model:
-/// - How to create oneDNN memory objects.
-///   - How to get data from the user's buffer into a oneDNN memory object.
-///   - How a tensor's logical dimensions and memory object formats relate.
-/// - How to create oneDNN primitives.
-/// - How to execute the primitives.
-///
-/// The example uses the ReLU operation and comprises the following steps:
-/// 1. Creating @ref getting_started_cpp_sub1 to execute a primitive.
-/// 2. Performing @ref getting_started_cpp_sub2.
-/// 3. @ref getting_started_cpp_sub3 (using different flavors).
-/// 4. @ref getting_started_cpp_sub4.
-/// 5. @ref getting_started_cpp_sub5.
-/// 6. @ref getting_started_cpp_sub6 (checking that the resulting image does
-///    not contain negative values).
-///
-/// These steps are implemented in the @ref getting_started_cpp_tutorial, which
-/// in turn is called from @ref getting_started_cpp_main (which is also
-/// responsible for error handling).
-///
-/// @section getting_started_cpp_headers Public headers
-///
-/// To start using oneDNN we must first include the @ref dnnl.hpp
-/// header file in the program. We also include @ref dnnl_debug.h in
-/// example_utils.hpp, which contains some debugging facilities like returning
-/// a string representation for common oneDNN C types.
+void simple_net(engine::kind engine_kind) {
+    using tag = memory::format_tag;
+    using dt = memory::data_type;
 
-// [Prologue]
+    auto eng = engine(engine_kind, 0);
+    stream s(eng);
 
-/// @page getting_started_cpp
-/// @section getting_started_cpp_tutorial getting_started_tutorial() function
-///
-void getting_started_tutorial(engine::kind engine_kind) {
-    /// @page getting_started_cpp
-    /// @subsection getting_started_cpp_sub1 Engine and stream
-    ///
-    /// All oneDNN primitives and memory objects are attached to a
-    /// particular @ref dnnl::engine, which is an abstraction of a
-    /// computational device (see also @ref dev_guide_basic_concepts). The
-    /// primitives are created and optimized for the device they are attached
-    /// to and the memory objects refer to memory residing on the
-    /// corresponding device. In particular, that means neither memory objects
-    /// nor primitives that were created for one engine can be used on
-    /// another.
-    ///
-    /// To create an engine, we should specify the @ref dnnl::engine::kind
-    /// and the index of the device of the given kind.
-    ///
-    /// @snippet getting_started.cpp Initialize engine
-    // [Initialize engine]
-    engine eng(engine_kind, 0);
-    // [Initialize engine]
+    // Vector of primitives and their execute arguments
+    std::vector<primitive> net_fwd, net_bwd;
+    std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_args;
 
-    /// In addition to an engine, all primitives require a @ref dnnl::stream
-    /// for the execution. The stream encapsulates an execution context and is
-    /// tied to a particular engine.
-    ///
-    /// The creation is pretty straightforward:
-    /// @snippet getting_started.cpp Initialize stream
-    // [Initialize stream]
-    stream engine_stream(eng);
-    // [Initialize stream]
+    const int batch = 32;
 
-    /// In the simple cases, when a program works with one device only (e.g.
-    /// only on CPU), an engine and a stream can be created once and used
-    /// throughout the program. Some frameworks create singleton objects that
-    /// hold oneDNN engine and stream and use them throughout the code.
+    // float data type is used for user data
+    std::vector<float> net_src(batch * 3 * 227 * 227);
 
-    /// @subsection getting_started_cpp_sub2 Data preparation (code outside of oneDNN)
-    ///
-    /// Now that the preparation work is done, let's create some data to work
-    /// with. We will create a 4D tensor in NHWC format, which is quite
-    /// popular in many frameworks.
-    ///
-    /// Note that even though we work with one image only, the image tensor
-    /// is still 4D. The extra dimension (here N) corresponds to the
-    /// batch, and, in case of a single image, is equal to 1. It is pretty
-    /// typical to have the batch dimension even when working with a single
-    /// image.
-    ///
-    /// In oneDNN, all CNN primitives assume that tensors have the batch
-    /// dimension, which is always the first logical dimension (see also @ref
-    /// dev_guide_conventions).
-    ///
-    /// @snippet getting_started.cpp Create user's data
-    // [Create user's data]
-    const int N = 1, H = 13, W = 13, C = 3;
+    // initializing non-zero values for src
+    for (size_t i = 0; i < net_src.size(); ++i)
+        net_src[i] = sinf((float)i);
 
-    // Compute physical strides for each dimension
-    const int stride_N = H * W * C;
-    const int stride_H = W * C;
-    const int stride_W = C;
-    const int stride_C = 1;
+    // AlexNet: conv
+    // {batch, 3, 227, 227} (x) {96, 3, 11, 11} -> {batch, 96, 55, 55}
+    // strides: {4, 4}
 
-    // An auxiliary function that maps logical index to the physical offset
-    auto offset = [=](int n, int h, int w, int c) {
-        return n * stride_N + h * stride_H + w * stride_W + c * stride_C;
-    };
+    memory::dims conv_src_tz = {batch, 3, 227, 227};
+    memory::dims conv_weights_tz = {96, 3, 11, 11};
+    memory::dims conv_bias_tz = {96};
+    memory::dims conv_dst_tz = {batch, 96, 55, 55};
+    memory::dims conv_strides = {4, 4};
+    memory::dims conv_padding = {0, 0};
 
-    // The image size
-    const int image_size = N * H * W * C;
+    // float data type is used for user data
+    std::vector<float> conv_weights(product(conv_weights_tz));
+    std::vector<float> conv_bias(product(conv_bias_tz));
 
-    // Allocate a buffer for the image
-    std::vector<float> image(image_size);
+    // initializing non-zero values for weights and bias
+    for (size_t i = 0; i < conv_weights.size(); ++i)
+        conv_weights[i] = sinf((float)i);
+    for (size_t i = 0; i < conv_bias.size(); ++i)
+        conv_bias[i] = sinf((float)i);
 
-    // Initialize the image with some values
-    for (int n = 0; n < N; ++n)
-        for (int h = 0; h < H; ++h)
-            for (int w = 0; w < W; ++w)
-                for (int c = 0; c < C; ++c) {
-                    int off = offset(
-                            n, h, w, c); // Get the physical offset of a pixel
-                    image[off] = -std::cos(off / 10.f);
-                }
-    // [Create user's data]
-    /// @subsection getting_started_cpp_sub3 Wrapping data into a oneDNN memory object
-    ///
-    /// Now, having the image ready, let's wrap it in a @ref dnnl::memory
-    /// object to be able to pass the data to oneDNN primitives.
-    ///
-    /// Creating @ref dnnl::memory comprises two steps:
-    ///   1. Initializing the @ref dnnl::memory::desc struct (also referred to
-    ///      as a memory descriptor), which only describes the tensor data and
-    ///      doesn't contain the data itself. Memory descriptors are used to
-    ///      create @ref dnnl::memory objects and to initialize primitive
-    ///      descriptors (shown later in the example).
-    ///   2. Creating the @ref dnnl::memory object itself (also referred to as
-    ///      a memory object), based on the memory descriptor initialized in
-    ///      step 1, an engine, and, optionally, a handle to data. The
-    ///      memory object is used when a primitive is executed.
-    ///
-    /// Thanks to the
-    /// [list initialization](https://en.cppreference.com/w/cpp/language/list_initialization)
-    /// introduced in C++11, it is possible to combine these two steps whenever
-    /// a memory descriptor is not used anywhere else but in creating a @ref
-    /// dnnl::memory object.
-    ///
-    /// However, for the sake of demonstration, we will show both steps
-    /// explicitly.
+    // create memory for user data
+    auto conv_user_src_memory
+            = memory({{conv_src_tz}, dt::f32, tag::nchw}, eng);
+    write_to_dnnl_memory(net_src.data(), conv_user_src_memory);
 
-    /// @subsubsection getting_started_cpp_sub31 Memory descriptor
-    ///
-    /// To initialize the @ref dnnl::memory::desc, we need to pass:
-    ///   1. The tensor's dimensions, **the semantic order** of which is
-    ///      defined by **the primitive** that will use this memory
-    ///      (descriptor). Which leads to the following:
-    ///      @warning
-    ///         Memory descriptors and objects are not aware of any meaning of
-    ///         the data they describe or contain.
-    ///   2. The data type for the tensor (@ref dnnl::memory::data_type).
-    ///   3. The memory format tag (@ref dnnl::memory::format_tag) that
-    ///      describes how the data is going to be laid out in the device's
-    ///      memory. The memory format is required for the primitive to
-    ///      correctly handle the data.
-    ///
-    /// The code:
-    /// @snippet getting_started.cpp Init src_md
-    // [Init src_md]
-    auto src_md = memory::desc(
-            {N, C, H, W}, // logical dims, the order is defined by a primitive
-            memory::data_type::f32, // tensor's data type
-            memory::format_tag::nhwc // memory format, NHWC in this case
-    );
-    // [Init src_md]
+    auto conv_user_weights_memory
+            = memory({{conv_weights_tz}, dt::f32, tag::oihw}, eng);
+    write_to_dnnl_memory(conv_weights.data(), conv_user_weights_memory);
 
-    /// The first thing to notice here is that we pass dimensions as `{N, C,
-    /// H, W}` while it might seem more natural to pass `{N, H, W, C}`, which
-    /// better corresponds to the user's code. This is because oneDNN
-    /// CNN primitives like ReLU always expect tensors in the following form:
-    ///
-    /// | Spatial dim | Tensor dimensions
-    /// | :--         | :--
-    /// | 0D          | \f$N \times C\f$
-    /// | 1D          | \f$N \times C \times W\f$
-    /// | 2D          | \f$N \times C \times H \times W\f$
-    /// | 3D          | \f$N \times C \times D \times H \times W\f$
-    ///
-    /// where:
-    /// - \f$N\f$ is a batch dimension (discussed above),
-    /// - \f$C\f$ is channel (aka feature maps) dimension, and
-    /// - \f$D\f$, \f$H\f$, and \f$W\f$ are spatial dimensions.
-    ///
-    /// Now that the logical order of dimension is defined, we need to specify
-    /// the memory format (the third parameter), which describes how logical
-    /// indices map to the offset in memory. This is the place where the user's
-    /// format NHWC comes into play. oneDNN has different @ref
-    /// dnnl::memory::format_tag values that cover the most popular memory
-    /// formats like NCHW, NHWC, CHWN, and some others.
-    ///
-    /// The memory descriptor for the image is called `src_md`. The `src` part
-    /// comes from the fact that the image will be a source for the ReLU
-    /// primitive (that is, we formulate memory names from the primitive
-    /// perspective; hence we will use `dst` to name the output memory). The
-    /// `md` is an initialism for Memory Descriptor.
+    auto conv_user_bias_memory = memory({{conv_bias_tz}, dt::f32, tag::x}, eng);
+    write_to_dnnl_memory(conv_bias.data(), conv_user_bias_memory);
 
-    /// @paragraph getting_started_cpp_sub311 Alternative way to create a memory descriptor
-    ///
-    /// Before we continue with memory creation, let us show the alternative
-    /// way to create the same memory descriptor: instead of using the
-    /// @ref dnnl::memory::format_tag, we can directly specify the strides
-    /// of each tensor dimension:
-    /// @snippet getting_started.cpp Init alt_src_md
-    // [Init alt_src_md]
-    auto alt_src_md = memory::desc(
-            {N, C, H, W}, // logical dims, the order is defined by a primitive
-            memory::data_type::f32, // tensor's data type
-            {stride_N, stride_C, stride_H, stride_W} // the strides
-    );
+    // create memory descriptors for bfloat16 convolution data w/ no specified
+    // format tag(`any`)
+    // tag `any` lets a primitive(convolution in this case)
+    // chose the memory format preferred for best performance.
+    auto conv_src_md = memory::desc({conv_src_tz}, dt::bf16, tag::any);
+    auto conv_weights_md = memory::desc({conv_weights_tz}, dt::bf16, tag::any);
+    auto conv_dst_md = memory::desc({conv_dst_tz}, dt::bf16, tag::any);
+    // here bias data type is set to bf16.
+    // additionally, f32 data type is supported for bf16 convolution.
+    auto conv_bias_md = memory::desc({conv_bias_tz}, dt::bf16, tag::any);
 
-    // Sanity check: the memory descriptors should be the same
-    if (src_md != alt_src_md)
-        throw std::logic_error("Memory descriptor initialization mismatch.");
-    // [Init alt_src_md]
+    // create a convolution primitive descriptor
+    auto conv_desc = convolution_forward::desc(prop_kind::forward,
+            algorithm::convolution_direct, conv_src_md, conv_weights_md,
+            conv_bias_md, conv_dst_md, conv_strides, conv_padding,
+            conv_padding);
 
-    /// Just as before, the tensor's dimensions come in the `N, C, H, W` order
-    /// as required by CNN primitives. To define the physical memory format,
-    /// the strides are passed as the third parameter. Note that the order of
-    /// the strides corresponds to the order of the tensor's dimensions.
-    /// @warning
-    ///     Using the wrong order might lead to incorrect results or even a
-    ///     crash.
-
-    /// @subsubsection getting_started_cpp_sub32 Creating a memory object
-    ///
-    /// Having a memory descriptor and an engine prepared, let's create
-    /// input and output memory objects for a ReLU primitive.
-    /// @snippet getting_started.cpp Create memory objects
-    // [Create memory objects]
-    // src_mem contains a copy of image after write_to_dnnl_memory function
-    auto src_mem = memory(src_md, eng);
-    write_to_dnnl_memory(image.data(), src_mem);
-
-    // For dst_mem the library allocates buffer
-    auto dst_mem = memory(src_md, eng);
-    // [Create memory objects]
-
-    /// We already have a memory buffer for the source memory object.  We pass
-    /// it to the
-    /// @ref dnnl::memory::memory(const desc &, const engine &, void *)
-    /// constructor that takes a buffer pointer as its last argument.
-    ///
-    /// Let's use a constructor that instructs the library to allocate a
-    /// memory buffer for the `dst_mem` for educational purposes.
-    ///
-    /// The key difference between these two are:
-    /// 1. The library will own the memory for `dst_mem` and will deallocate
-    ///    it when `dst_mem` is destroyed. That means the memory buffer can
-    ///    be used only while `dst_mem` is alive.
-    /// 2. Library-allocated buffers have good alignment, which typically
-    ///    results in better performance.
-    ///
-    /// @note
-    ///     Memory allocated outside of the library and passed to oneDNN
-    ///     should have good alignment for better performance.
-    ///
-    /// In the subsequent section we will show how to get the buffer (pointer)
-    /// from the `dst_mem` memory object.
-    /// @subsection getting_started_cpp_sub4 Creating a ReLU primitive
-    ///
-    /// Let's now create a ReLU primitive.
-    ///
-    /// The library implements ReLU primitive as a particular algorithm of a
-    /// more general @ref dev_guide_eltwise primitive, which applies a specified
-    /// function to each and every element of the source tensor.
-    ///
-    /// Just as in the case of @ref dnnl::memory, a user should always go
-    /// through (at least) three creation steps (which however, can be sometimes
-    /// combined thanks to C++11):
-    /// 1. Initialize an operation descriptor (in this example,
-    ///    @ref dnnl::eltwise_forward::desc), which defines the operation
-    ///    parameters.
-    /// 2. Create an operation primitive descriptor (here @ref
-    ///    dnnl::eltwise_forward::primitive_desc), which is a
-    ///    **lightweight** descriptor of the actual algorithm that
-    ///    **implements** the given operation. The user can query different
-    ///    characteristics of the chosen implementation such as memory
-    ///    consumptions and some others that will be covered in the next topic
-    ///    (@ref memory_format_propagation_cpp).
-    /// 3. Create a primitive (here @ref dnnl::eltwise_forward) that can be
-    ///    executed on memory objects to compute the operation.
-    ///
-    /// oneDNN separates steps 2 and 3 to enable the user to inspect details of a
-    /// primitive implementation prior to creating the primitive.  This may be
-    /// expensive, because, for example, oneDNN generates the optimized
-    /// computational code on the fly.
-    ///
-    ///@note
-    ///    Primitive creation might be a very expensive operation, so consider
-    ///    creating primitive objects once and executing them multiple times.
-    ///
-    /// The code:
-    /// @snippet getting_started.cpp Create a ReLU primitive
-    // [Create a ReLU primitive]
-    //  ReLU op descriptor (no engine- or implementation-specific information)
-    auto relu_d = eltwise_forward::desc(
-            prop_kind::forward_inference, algorithm::eltwise_relu,
-            src_md, // the memory descriptor for an operation to work on
-            0.f, // alpha parameter means negative slope in case of ReLU
-            0.f // beta parameter is ignored in case of ReLU
-    );
-
-    // ReLU primitive descriptor, which corresponds to a particular
-    // implementation in the library
-    auto relu_pd
-            = eltwise_forward::primitive_desc(relu_d, // an operation descriptor
-                    eng // an engine the primitive will be created for
-            );
-
-    // ReLU primitive
-    auto relu = eltwise_forward(relu_pd); // !!! this can take quite some time
-    // [Create a ReLU primitive]
-
-    /// A note about variable names. Similar to the `_md` suffix used for
-    /// memory descriptor, we use `_d` for the operation descriptor names,
-    /// `_pd` for the primitive descriptors, and no suffix for primitives
-    /// themselves.
-    ///
-    /// It is worth mentioning that we specified the exact tensor and its
-    /// memory format when we were initializing the `relu_d`. That means
-    /// `relu` primitive would perform computations with memory objects that
-    /// correspond to this description. This is the one and only one way of
-    /// creating non-compute-intensive primitives like @ref dev_guide_eltwise,
-    /// @ref dev_guide_batch_normalization, and others.
-    ///
-    /// Compute-intensive primitives (like @ref dev_guide_convolution) have an
-    /// ability to define the appropriate memory format on their own. This is
-    /// one of the key features of the library and will be discussed in detail
-    /// in the next topic: @ref memory_format_propagation_cpp.
-
-    /// @subsection getting_started_cpp_sub5 Executing the ReLU primitive
-    ///
-    /// Finally, let's execute the primitive and wait for its completion.
-    ///
-    /// The input and output memory objects are passed to the `execute()`
-    /// method using a <tag, memory> map. Each tag specifies what kind of
-    /// tensor each memory object represents. All @ref dev_guide_eltwise
-    /// primitives require the map to have two elements: a source memory
-    /// object (input) and a destination memory (output).
-    ///
-    /// A primitive is executed in a stream (the first parameter of the
-    /// `execute()` method). Depending on a stream kind, an execution might be
-    /// blocking or non-blocking. This means that we need to call @ref
-    /// dnnl::stream::wait before accessing the results.
-    ///
-    /// @snippet getting_started.cpp Execute ReLU primitive
-    // [Execute ReLU primitive]
-    // Execute ReLU (out-of-place)
-    relu.execute(engine_stream, // The execution stream
-            {
-                    // A map with all inputs and outputs
-                    {DNNL_ARG_SRC, src_mem}, // Source tag and memory obj
-                    {DNNL_ARG_DST, dst_mem}, // Destination tag and memory obj
-            });
-
-    // Wait the stream to complete the execution
-    engine_stream.wait();
-    // [Execute ReLU primitive]
-
-    /// The @ref dev_guide_eltwise is one of the primitives that support
-    /// in-place operations, meaning that the source and destination memory can
-    /// be the same. To perform in-place transformation, the user must pass the
-    /// same memory object for both the `DNNL_ARG_SRC` and
-    /// `DNNL_ARG_DST` tags:
-    /// @snippet getting_started.cpp Execute ReLU primitive in-place
-    // [Execute ReLU primitive in-place]
-    // Execute ReLU (in-place)
-    // relu.execute(engine_stream,  {
-    //          {DNNL_ARG_SRC, src_mem},
-    //          {DNNL_ARG_DST, src_mem},
-    //         });
-    // [Execute ReLU primitive in-place]
-
-    /// @page getting_started_cpp
-    /// @subsection getting_started_cpp_sub6 Obtaining the result and validation
-    ///
-    /// Now that we have the computed result, let's validate that it is
-    /// actually correct. The result is stored in the `dst_mem` memory object.
-    /// So we need to obtain the C++ pointer to a buffer with data via @ref
-    /// dnnl::memory::get_data_handle() and cast it to the proper data type
-    /// as shown below.
-    ///
-    /// @warning
-    ///     The @ref dnnl::memory::get_data_handle() returns a raw handle
-    ///     to the buffer, the type of which is engine specific. For the CPU
-    ///     engine the buffer is always a pointer to `void`, which can safely
-    ///     be used. However, for engines other than CPU the handle might be
-    ///     runtime-specific type, such as `cl_mem` in case of GPU/OpenCL.
-    ///
-    /// @snippet getting_started.cpp Check the results
-    // [Check the results]
-    // Obtain a buffer for the `dst_mem` and cast it to `float *`.
-    // This is safe since we created `dst_mem` as f32 tensor with known
-    // memory format.
-    std::vector<float> relu_image(image_size);
-    read_from_dnnl_memory(relu_image.data(), dst_mem);
-    /*
-    // Check the results
-    for (int n = 0; n < N; ++n)
-        for (int h = 0; h < H; ++h)
-            for (int w = 0; w < W; ++w)
-                for (int c = 0; c < C; ++c) {
-                    int off = offset(
-                            n, h, w, c); // get the physical offset of a pixel
-                    float expected = image[off] < 0
-                            ? 0.f
-                            : image[off]; // expected value
-                    if (relu_image[off] != expected) {
-                        std::cout << "At index(" << n << ", " << c << ", " << h
-                                  << ", " << w << ") expect " << expected
-                                  << " but got " << relu_image[off]
-                                  << std::endl;
-                        throw std::logic_error("Accuracy check failed.");
-                    }
-                }
-    // [Check the results]
-    */
-}
-
-/// @page getting_started_cpp
-///
-/// @section getting_started_cpp_main main() function
-///
-/// We now just call everything we prepared earlier.
-///
-/// Because we are using the oneDNN C++ API, we use exceptions to handle errors
-/// (see @ref dev_guide_c_and_cpp_apis).
-/// The oneDNN C++ API throws exceptions of type @ref dnnl::error,
-/// which contains the error status (of type @ref dnnl_status_t) and a
-/// human-readable error message accessible through regular `what()` method.
-/// @page getting_started_cpp
-/// @snippet getting_started.cpp Main
-// [Main]
-int main(int argc, char **argv) {
-    int exit_code = 0;
-
-    engine::kind engine_kind = parse_engine_kind(argc, argv);
+    // check if bf16 convolution is supported
     try {
-        getting_started_tutorial(engine_kind);
-    } catch (dnnl::error &e) {
-        std::cout << "oneDNN error caught: " << std::endl
-                  << "\tStatus: " << dnnl_status2str(e.status) << std::endl
-                  << "\tMessage: " << e.what() << std::endl;
-        exit_code = 1;
-    } catch (std::string &e) {
-        std::cout << "Error in the example: " << e << "." << std::endl;
-        exit_code = 2;
+        convolution_forward::primitive_desc(conv_desc, eng);
+    } catch (error &e) {
+        if (e.status == dnnl_unimplemented)
+            throw example_allows_unimplemented {
+                    "No bf16 convolution implementation is available for this "
+                    "platform.\n"
+                    "Please refer to the developer guide for details."};
+
+        // on any other error just re-throw
+        throw;
     }
 
-    std::cout << "Example " << (exit_code ? "failed" : "passed") << " on "
-              << engine_kind2str_upper(engine_kind) << "." << std::endl;
-    return exit_code;
-}
-// [Main]
+    auto conv_pd = convolution_forward::primitive_desc(conv_desc, eng);
 
-/// @page getting_started_cpp
-///
-/// <b></b>
-///
-/// Upon compiling and run the example the output should be just:
-///
-/// ~~~
-/// Example passed.
-/// ~~~
-///
-/// Users are encouraged to experiment with the code to familiarize themselves
-/// with the concepts. In particular, one of the changes that might be of
-/// interest is to spoil some of the library calls to check how error handling
-/// happens. For instance, if we replace
-///
-/// ~~~cpp
-/// relu.execute(engine_stream, {
-///         {DNNL_ARG_SRC, src_mem},
-///         {DNNL_ARG_DST, dst_mem},
-///     });
-/// ~~~
-///
-/// with
-///
-/// ~~~cpp
-/// relu.execute(engine_stream, {
-///         {DNNL_ARG_SRC, src_mem},
-///         // {DNNL_ARG_DST, dst_mem}, // Oops, forgot about this one
-///     });
-/// ~~~
-///
-/// we should get the following output:
-///
-/// ~~~
-/// oneDNN error caught:
-///         Status: invalid_arguments
-///         Message: could not execute a primitive
-/// Example failed.
-/// ~~~
+    // create reorder primitives between user input and conv src if needed
+    auto conv_src_memory = conv_user_src_memory;
+    if (conv_pd.src_desc() != conv_user_src_memory.get_desc()) {
+        conv_src_memory = memory(conv_pd.src_desc(), eng);
+        net_fwd.push_back(reorder(conv_user_src_memory, conv_src_memory));
+        net_fwd_args.push_back({{DNNL_ARG_FROM, conv_user_src_memory},
+                {DNNL_ARG_TO, conv_src_memory}});
+    }
+
+    auto conv_weights_memory = conv_user_weights_memory;
+    if (conv_pd.weights_desc() != conv_user_weights_memory.get_desc()) {
+        conv_weights_memory = memory(conv_pd.weights_desc(), eng);
+        net_fwd.push_back(
+                reorder(conv_user_weights_memory, conv_weights_memory));
+        net_fwd_args.push_back({{DNNL_ARG_FROM, conv_user_weights_memory},
+                {DNNL_ARG_TO, conv_weights_memory}});
+    }
+
+    // convert bias from f32 to bf16 as convolution descriptor is created with
+    // bias data type as bf16.
+    auto conv_bias_memory = conv_user_bias_memory;
+    if (conv_pd.bias_desc() != conv_user_bias_memory.get_desc()) {
+        conv_bias_memory = memory(conv_pd.bias_desc(), eng);
+        net_fwd.push_back(reorder(conv_user_bias_memory, conv_bias_memory));
+        net_fwd_args.push_back({{DNNL_ARG_FROM, conv_user_bias_memory},
+                {DNNL_ARG_TO, conv_bias_memory}});
+    }
+
+    // create memory for conv dst
+    auto conv_dst_memory = memory(conv_pd.dst_desc(), eng);
+
+    // finally create a convolution primitive
+    net_fwd.push_back(convolution_forward(conv_pd));
+    net_fwd_args.push_back({{DNNL_ARG_SRC, conv_src_memory},
+            {DNNL_ARG_WEIGHTS, conv_weights_memory},
+            {DNNL_ARG_BIAS, conv_bias_memory},
+            {DNNL_ARG_DST, conv_dst_memory}});
+
+    // AlexNet: relu
+    // {batch, 96, 55, 55} -> {batch, 96, 55, 55}
+    memory::dims relu_data_tz = {batch, 96, 55, 55};
+    const float negative_slope = 0.0f;
+
+    // create relu primitive desc
+    // keep memory format tag of source same as the format tag of convolution
+    // output in order to avoid reorder
+    auto relu_desc = eltwise_forward::desc(prop_kind::forward,
+            algorithm::eltwise_relu, conv_pd.dst_desc(), negative_slope);
+    auto relu_pd = eltwise_forward::primitive_desc(relu_desc, eng);
+
+    // create relu dst memory
+    auto relu_dst_memory = memory(relu_pd.dst_desc(), eng);
+
+    // finally create a relu primitive
+    net_fwd.push_back(eltwise_forward(relu_pd));
+    net_fwd_args.push_back(
+            {{DNNL_ARG_SRC, conv_dst_memory}, {DNNL_ARG_DST, relu_dst_memory}});
+
+    // AlexNet: lrn
+    // {batch, 96, 55, 55} -> {batch, 96, 55, 55}
+    // local size: 5
+    // alpha: 0.0001
+    // beta: 0.75
+    // k: 1.0
+    memory::dims lrn_data_tz = {batch, 96, 55, 55};
+    const uint32_t local_size = 5;
+    const float alpha = 0.0001f;
+    const float beta = 0.75f;
+    const float k = 1.0f;
+
+    // create a lrn primitive descriptor
+    auto lrn_desc = lrn_forward::desc(prop_kind::forward,
+            algorithm::lrn_across_channels, relu_pd.dst_desc(), local_size,
+            alpha, beta, k);
+    auto lrn_pd = lrn_forward::primitive_desc(lrn_desc, eng);
+
+    // create lrn dst memory
+    auto lrn_dst_memory = memory(lrn_pd.dst_desc(), eng);
+
+    // create workspace only in training and only for forward primitive
+    // query lrn_pd for workspace, this memory will be shared with forward lrn
+    auto lrn_workspace_memory = memory(lrn_pd.workspace_desc(), eng);
+
+    // finally create a lrn primitive
+    net_fwd.push_back(lrn_forward(lrn_pd));
+    net_fwd_args.push_back(
+            {{DNNL_ARG_SRC, relu_dst_memory}, {DNNL_ARG_DST, lrn_dst_memory},
+                    {DNNL_ARG_WORKSPACE, lrn_workspace_memory}});
+
+    // AlexNet: pool
+    // {batch, 96, 55, 55} -> {batch, 96, 27, 27}
+    // kernel: {3, 3}
+    // strides: {2, 2}
+
+    memory::dims pool_dst_tz = {batch, 96, 27, 27};
+    memory::dims pool_kernel = {3, 3};
+    memory::dims pool_strides = {2, 2};
+    memory::dims pool_padding = {0, 0};
+
+    // create memory for pool dst data in user format
+    auto pool_user_dst_memory
+            = memory({{pool_dst_tz}, dt::f32, tag::nchw}, eng);
+
+    // create pool dst memory descriptor in format any for bfloat16 data type
+    auto pool_dst_md = memory::desc({pool_dst_tz}, dt::bf16, tag::any);
+
+    // create a pooling primitive descriptor
+    auto pool_desc = pooling_forward::desc(prop_kind::forward,
+            algorithm::pooling_max, lrn_dst_memory.get_desc(), pool_dst_md,
+            pool_strides, pool_kernel, pool_padding, pool_padding);
+    auto pool_pd = pooling_forward::primitive_desc(pool_desc, eng);
+
+    // create pooling workspace memory if training
+    auto pool_workspace_memory = memory(pool_pd.workspace_desc(), eng);
+
+    // create a pooling primitive
+    net_fwd.push_back(pooling_forward(pool_pd));
+    // leave DST unknown for now (see the next reorder)
+    net_fwd_args.push_back({{DNNL_ARG_SRC, lrn_dst_memory},
+            // delay putting DST until reorder (if needed)
+            {DNNL_ARG_WORKSPACE, pool_workspace_memory}});
+
+    // create reorder primitive between pool dst and user dst format
+    // if needed
+    auto pool_dst_memory = pool_user_dst_memory;
+    if (pool_pd.dst_desc() != pool_user_dst_memory.get_desc()) {
+        pool_dst_memory = memory(pool_pd.dst_desc(), eng);
+        net_fwd_args.back().insert({DNNL_ARG_DST, pool_dst_memory});
+
+        net_fwd.push_back(reorder(pool_dst_memory, pool_user_dst_memory));
+        net_fwd_args.push_back({{DNNL_ARG_FROM, pool_dst_memory},
+                {DNNL_ARG_TO, pool_user_dst_memory}});
+    } else {
+        net_fwd_args.back().insert({DNNL_ARG_DST, pool_dst_memory});
+    }
+
+    //-----------------------------------------------------------------------
+    //----------------- Backward Stream -------------------------------------
+    // ... user diff_data in float data type ...
+    std::vector<float> net_diff_dst(batch * 96 * 27 * 27);
+    for (size_t i = 0; i < net_diff_dst.size(); ++i)
+        net_diff_dst[i] = sinf((float)i);
+
+    // create memory for user diff dst data stored in float data type
+    auto pool_user_diff_dst_memory
+            = memory({{pool_dst_tz}, dt::f32, tag::nchw}, eng);
+    write_to_dnnl_memory(net_diff_dst.data(), pool_user_diff_dst_memory);
+
+    // Backward pooling
+    // create memory descriptors for pooling
+    auto pool_diff_src_md = memory::desc({lrn_data_tz}, dt::bf16, tag::any);
+    auto pool_diff_dst_md = memory::desc({pool_dst_tz}, dt::bf16, tag::any);
+
+    // create backward pooling descriptor
+    auto pool_bwd_desc = pooling_backward::desc(algorithm::pooling_max,
+            pool_diff_src_md, pool_diff_dst_md, pool_strides, pool_kernel,
+            pool_padding, pool_padding);
+    // backward primitive descriptor needs to hint forward descriptor
+    auto pool_bwd_pd
+            = pooling_backward::primitive_desc(pool_bwd_desc, eng, pool_pd);
+
+    // create reorder primitive between user diff dst and pool diff dst
+    // if required
+    auto pool_diff_dst_memory = pool_user_diff_dst_memory;
+    if (pool_dst_memory.get_desc() != pool_user_diff_dst_memory.get_desc()) {
+        pool_diff_dst_memory = memory(pool_dst_memory.get_desc(), eng);
+        net_bwd.push_back(
+                reorder(pool_user_diff_dst_memory, pool_diff_dst_memory));
+        net_bwd_args.push_back({{DNNL_ARG_FROM, pool_user_diff_dst_memory},
+                {DNNL_ARG_TO, pool_diff_dst_memory}});
+    }
+
+    // create memory for pool diff src
+    auto pool_diff_src_memory = memory(pool_bwd_pd.diff_src_desc(), eng);
+
+    // finally create backward pooling primitive
+    net_bwd.push_back(pooling_backward(pool_bwd_pd));
+    net_bwd_args.push_back({{DNNL_ARG_DIFF_DST, pool_diff_dst_memory},
+            {DNNL_ARG_DIFF_SRC, pool_diff_src_memory},
+            {DNNL_ARG_WORKSPACE, pool_workspace_memory}});
+
+    // Backward lrn
+    auto lrn_diff_dst_md = memory::desc({lrn_data_tz}, dt::bf16, tag::any);
+
+    // create backward lrn primitive descriptor
+    auto lrn_bwd_desc = lrn_backward::desc(algorithm::lrn_across_channels,
+            lrn_pd.src_desc(), lrn_diff_dst_md, local_size, alpha, beta, k);
+    auto lrn_bwd_pd = lrn_backward::primitive_desc(lrn_bwd_desc, eng, lrn_pd);
+
+    // create reorder primitive between pool diff src and lrn diff dst
+    // if required
+    auto lrn_diff_dst_memory = pool_diff_src_memory;
+    if (lrn_diff_dst_memory.get_desc() != lrn_bwd_pd.diff_dst_desc()) {
+        lrn_diff_dst_memory = memory(lrn_bwd_pd.diff_dst_desc(), eng);
+        net_bwd.push_back(reorder(pool_diff_src_memory, lrn_diff_dst_memory));
+        net_bwd_args.push_back({{DNNL_ARG_FROM, pool_diff_src_memory},
+                {DNNL_ARG_TO, lrn_diff_dst_memory}});
+    }
+
+    // create memory for lrn diff src
+    auto lrn_diff_src_memory = memory(lrn_bwd_pd.diff_src_desc(), eng);
+
+    // finally create a lrn backward primitive
+    // backward lrn needs src: relu dst in this topology
+    net_bwd.push_back(lrn_backward(lrn_bwd_pd));
+    net_bwd_args.push_back({{DNNL_ARG_SRC, relu_dst_memory},
+            {DNNL_ARG_DIFF_DST, lrn_diff_dst_memory},
+            {DNNL_ARG_DIFF_SRC, lrn_diff_src_memory},
+            {DNNL_ARG_WORKSPACE, lrn_workspace_memory}});
+
+    // Backward relu
+    auto relu_diff_dst_md = memory::desc({relu_data_tz}, dt::bf16, tag::any);
+    auto relu_src_md = conv_pd.dst_desc();
+
+    // create backward relu primitive_descriptor
+    auto relu_bwd_desc = eltwise_backward::desc(algorithm::eltwise_relu,
+            relu_diff_dst_md, relu_src_md, negative_slope);
+    auto relu_bwd_pd
+            = eltwise_backward::primitive_desc(relu_bwd_desc, eng, relu_pd);
+
+    // create reorder primitive between lrn diff src and relu diff dst
+    // if required
+    auto relu_diff_dst_memory = lrn_diff_src_memory;
+    if (relu_diff_dst_memory.get_desc() != relu_bwd_pd.diff_dst_desc()) {
+        relu_diff_dst_memory = memory(relu_bwd_pd.diff_dst_desc(), eng);
+        net_bwd.push_back(reorder(lrn_diff_src_memory, relu_diff_dst_memory));
+        net_bwd_args.push_back({{DNNL_ARG_FROM, lrn_diff_src_memory},
+                {DNNL_ARG_TO, relu_diff_dst_memory}});
+    }
+
+    // create memory for relu diff src
+    auto relu_diff_src_memory = memory(relu_bwd_pd.diff_src_desc(), eng);
+
+    // finally create a backward relu primitive
+    net_bwd.push_back(eltwise_backward(relu_bwd_pd));
+    net_bwd_args.push_back({{DNNL_ARG_SRC, conv_dst_memory},
+            {DNNL_ARG_DIFF_DST, relu_diff_dst_memory},
+            {DNNL_ARG_DIFF_SRC, relu_diff_src_memory}});
+
+    // Backward convolution with respect to weights
+    // create user format diff weights and diff bias memory for float data type
+
+    auto conv_user_diff_weights_memory
+            = memory({{conv_weights_tz}, dt::f32, tag::nchw}, eng);
+    auto conv_diff_bias_memory = memory({{conv_bias_tz}, dt::f32, tag::x}, eng);
+
+    // create memory descriptors for bfloat16 convolution data
+    auto conv_bwd_src_md = memory::desc({conv_src_tz}, dt::bf16, tag::any);
+    auto conv_diff_weights_md
+            = memory::desc({conv_weights_tz}, dt::bf16, tag::any);
+    auto conv_diff_dst_md = memory::desc({conv_dst_tz}, dt::bf16, tag::any);
+
+    // use diff bias provided by the user
+    auto conv_diff_bias_md = conv_diff_bias_memory.get_desc();
+
+    // create backward convolution primitive descriptor
+    auto conv_bwd_weights_desc
+            = convolution_backward_weights::desc(algorithm::convolution_direct,
+                    conv_bwd_src_md, conv_diff_weights_md, conv_diff_bias_md,
+                    conv_diff_dst_md, conv_strides, conv_padding, conv_padding);
+    auto conv_bwd_weights_pd = convolution_backward_weights::primitive_desc(
+            conv_bwd_weights_desc, eng, conv_pd);
+
+    // for best performance convolution backward might chose
+    // different memory format for src and diff_dst
+    // than the memory formats preferred by forward convolution
+    // for src and dst respectively
+    // create reorder primitives for src from forward convolution to the
+    // format chosen by backward convolution
+    auto conv_bwd_src_memory = conv_src_memory;
+    if (conv_bwd_weights_pd.src_desc() != conv_src_memory.get_desc()) {
+        conv_bwd_src_memory = memory(conv_bwd_weights_pd.src_desc(), eng);
+        net_bwd.push_back(reorder(conv_src_memory, conv_bwd_src_memory));
+        net_bwd_args.push_back({{DNNL_ARG_FROM, conv_src_memory},
+                {DNNL_ARG_TO, conv_bwd_src_memory}});
+    }
+
+    // create reorder primitives for diff_dst between diff_src from relu_bwd
+    // and format preferred by conv_diff_weights
+    auto conv_diff_dst_memory = relu_diff_src_memory;
+    if (conv_bwd_weights_pd.diff_dst_desc()
+            != relu_diff_src_memory.get_desc()) {
+        conv_diff_dst_memory = memory(conv_bwd_weights_pd.diff_dst_desc(), eng);
+        net_bwd.push_back(reorder(relu_diff_src_memory, conv_diff_dst_memory));
+        net_bwd_args.push_back({{DNNL_ARG_FROM, relu_diff_src_memory},
+                {DNNL_ARG_TO, conv_diff_dst_memory}});
+    }
+
+    // create backward convolution primitive
+    net_bwd.push_back(convolution_backward_weights(conv_bwd_weights_pd));
+    net_bwd_args.push_back({{DNNL_ARG_SRC, conv_bwd_src_memory},
+            {DNNL_ARG_DIFF_DST, conv_diff_dst_memory},
+            // delay putting DIFF_WEIGHTS until reorder (if needed)
+            {DNNL_ARG_DIFF_BIAS, conv_diff_bias_memory}});
+
+    // create reorder primitives between conv diff weights and user diff weights
+    // if needed
+    auto conv_diff_weights_memory = conv_user_diff_weights_memory;
+    if (conv_bwd_weights_pd.diff_weights_desc()
+            != conv_user_diff_weights_memory.get_desc()) {
+        conv_diff_weights_memory
+                = memory(conv_bwd_weights_pd.diff_weights_desc(), eng);
+        net_bwd_args.back().insert(
+                {DNNL_ARG_DIFF_WEIGHTS, conv_diff_weights_memory});
+
+        net_bwd.push_back(reorder(
+                conv_diff_weights_memory, conv_user_diff_weights_memory));
+        net_bwd_args.push_back({{DNNL_ARG_FROM, conv_diff_weights_memory},
+                {DNNL_ARG_TO, conv_user_diff_weights_memory}});
+    } else {
+        net_bwd_args.back().insert(
+                {DNNL_ARG_DIFF_WEIGHTS, conv_diff_weights_memory});
+    }
+
+    // didn't we forget anything?
+    assert(net_fwd.size() == net_fwd_args.size() && "something is missing");
+    assert(net_bwd.size() == net_bwd_args.size() && "something is missing");
+
+    int n_iter = 50; // number of iterations for training
+    // execute
+    while (n_iter) {
+        // forward
+
+        std::cout << "Iteration # " << n_iter << "\n";
+
+        for (size_t i = 0; i < net_fwd.size(); ++i)
+            net_fwd.at(i).execute(s, net_fwd_args.at(i));
+
+        // update net_diff_dst
+        // auto net_output = pool_user_dst_memory.get_data_handle();
+        // ..user updates net_diff_dst using net_output...
+        // some user defined func update_diff_dst(net_diff_dst.data(),
+        // net_output)
+
+        for (size_t i = 0; i < net_bwd.size(); ++i)
+            net_bwd.at(i).execute(s, net_bwd_args.at(i));
+        // update weights and bias using diff weights and bias
+        //
+        // auto net_diff_weights
+        //     = conv_user_diff_weights_memory.get_data_handle();
+        // auto net_diff_bias = conv_diff_bias_memory.get_data_handle();
+        //
+        // ...user updates weights and bias using diff weights and bias...
+        //
+        // some user defined func update_weights(conv_weights.data(),
+        // conv_bias.data(), net_diff_weights, net_diff_bias);
+
+        --n_iter;
+    }
+
+    s.wait();
+}
+
+int main(int argc, char **argv) {
+    return handle_example_errors(simple_net, parse_engine_kind(argc, argv));
+}
