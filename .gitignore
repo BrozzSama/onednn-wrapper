@@ -7,4 +7,7 @@ run.sh
 run.sh.*
 
 .vscode
+.vscode/*
+
+data/
 
