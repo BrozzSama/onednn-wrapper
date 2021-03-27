@@ -3,6 +3,7 @@ dpcpp/
 
 # exclude scripts created by notebook
 build.sh
+build.sh*
 run.sh
 run.sh.*
 
