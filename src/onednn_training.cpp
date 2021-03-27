@@ -29,6 +29,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <random>
 
 #include "oneapi/dnnl/dnnl.hpp"
 
@@ -40,15 +41,18 @@ using namespace dnnl;
 
 void simple_net(engine::kind engine_kind)
 {
+        // RNG for ALL purposes
+        std::default_random_engine generator;
+
         auto path = "data/skull_32_vessel.npy";
         std::vector<unsigned long> shape;
         bool fortran_order;
-        std::vector<double> data;
+        std::vector<double> net_src;
 
         shape.clear();
         data.clear();
 
-        npy::LoadArrayFromNumpy(path, shape, fortran_order, data);
+        npy::LoadArrayFromNumpy(path, shape, fortran_order, net_src);
 
         std::cout << "shape: ";
         for (size_t i = 0; i < shape.size(); i++)
@@ -65,35 +69,39 @@ void simple_net(engine::kind engine_kind)
         std::vector<primitive> net_fwd, net_bwd;
         std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_args;
 
-        const int batch = 32;
+        const int batch = shape[0];
+        const int patch_size = shape[1];
+        const int stride = 1;
+        const int kernel_size = 3;
+        // Compute the padding to preserve the same dimension in input and output
+        const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
+        padding /= 2;
 
-        // float data type is used for user data
-        std::vector<float> net_src(batch * 3 * 227 * 227);
-
-        // initializing non-zero values for src
-        for (size_t i = 0; i < net_src.size(); ++i)
-                net_src[i] = sinf((float)i);
-
-        // AlexNet: conv
-        // {batch, 3, 227, 227} (x) {96, 3, 11, 11} -> {batch, 96, 55, 55}
+        // pnetcls: conv
+        // {batch, 1, 32, 32} (x) {64, 1, 3, 3} -> {batch, 96, 55, 55}
         // strides: {4, 4}
 
-        memory::dims conv_src_tz = {batch, 3, 227, 227};
-        memory::dims conv_weights_tz = {96, 3, 11, 11};
-        memory::dims conv_bias_tz = {96};
-        memory::dims conv_dst_tz = {batch, 96, 55, 55};
-        memory::dims conv_strides = {4, 4};
-        memory::dims conv_padding = {0, 0};
+        // N channels is one since we have monochromatic images
+        memory::dims conv_src_tz = {batch, 1, patch_size, patch_size};
+        memory::dims conv_weights_tz = {64, 1, kernel_size, kernel_size};
+        memory::dims conv_bias_tz = {64};
+        memory::dims conv_dst_tz = {batch, 64, patch_size, patch_size};
+        memory::dims conv_strides = {stride, stride};
+        memory::dims conv_padding = {padding, padding};
 
         // float data type is used for user data
         std::vector<float> conv_weights(product(conv_weights_tz));
         std::vector<float> conv_bias(product(conv_bias_tz));
 
+        int limit = sqrt(6 / (2 * kernel_size * kernel_size))
+            std::uniform_real_distribution<double>
+                distribution_conv1(-limit, limit);
+
         // initializing non-zero values for weights and bias
         for (size_t i = 0; i < conv_weights.size(); ++i)
-                conv_weights[i] = sinf((float)i);
+                conv_weights[i] = distribution_conv1(generator);
         for (size_t i = 0; i < conv_bias.size(); ++i)
-                conv_bias[i] = sinf((float)i);
+                conv_bias[i] = distribution_conv1(generator);
 
         // create memory for user data
         auto conv_user_src_memory = memory({{conv_src_tz}, dt::f32, tag::nchw}, eng);
@@ -116,16 +124,18 @@ void simple_net(engine::kind engine_kind)
         // additionally, f32 data type is supported for bf16 convolution.
         auto conv_bias_md = memory::desc({conv_bias_tz}, dt::bf16, tag::any);
 
+        int dilation = 1;
+
         // create a convolution primitive descriptor
-        auto conv_desc = convolution_forward::desc(prop_kind::forward,
-                                                   algorithm::convolution_direct, conv_src_md, conv_weights_md,
-                                                   conv_bias_md, conv_dst_md, conv_strides, conv_padding,
-                                                   conv_padding);
+        auto conv_desc = dilated_convolution_forward::desc(prop_kind::forward,
+                                                           algorithm::convolution_direct, conv_src_md, conv_weights_md,
+                                                           conv_bias_md, conv_dst_md, conv_strides, dilation, conv_padding,
+                                                           conv_padding);
 
         // check if bf16 convolution is supported
         try
         {
-                convolution_forward::primitive_desc(conv_desc, eng);
+                dilated_convolution_forward::primitive_desc(conv_desc, eng);
         }
         catch (error &e)
         {
@@ -139,7 +149,7 @@ void simple_net(engine::kind engine_kind)
                 throw;
         }
 
-        auto conv_pd = convolution_forward::primitive_desc(conv_desc, eng);
+        auto conv_pd = dilated_convolution_forward::primitive_desc(conv_desc, eng);
 
         // create reorder primitives between user input and conv src if needed
         auto conv_src_memory = conv_user_src_memory;
@@ -176,15 +186,15 @@ void simple_net(engine::kind engine_kind)
         auto conv_dst_memory = memory(conv_pd.dst_desc(), eng);
 
         // finally create a convolution primitive
-        net_fwd.push_back(convolution_forward(conv_pd));
+        net_fwd.push_back(dilated_convolution_forward(conv_pd));
         net_fwd_args.push_back({{DNNL_ARG_SRC, conv_src_memory},
                                 {DNNL_ARG_WEIGHTS, conv_weights_memory},
                                 {DNNL_ARG_BIAS, conv_bias_memory},
                                 {DNNL_ARG_DST, conv_dst_memory}});
 
-        // AlexNet: relu
-        // {batch, 96, 55, 55} -> {batch, 96, 55, 55}
-        memory::dims relu_data_tz = {batch, 96, 55, 55};
+        // PnetCLS: relu
+        // {batch, 64, patch_size, patch_size} -> {batch, 64, patch_size, patch_size}
+        memory::dims relu_data_tz = {batch, 64, patch_size, patch_size};
         const float negative_slope = 0.0f;
 
         // create relu primitive desc
@@ -202,84 +212,138 @@ void simple_net(engine::kind engine_kind)
         net_fwd_args.push_back(
             {{DNNL_ARG_SRC, conv_dst_memory}, {DNNL_ARG_DST, relu_dst_memory}});
 
-        // AlexNet: lrn
-        // {batch, 96, 55, 55} -> {batch, 96, 55, 55}
-        // local size: 5
-        // alpha: 0.0001
-        // beta: 0.75
-        // k: 1.0
-        memory::dims lrn_data_tz = {batch, 96, 55, 55};
-        const uint32_t local_size = 5;
-        const float alpha = 0.0001f;
-        const float beta = 0.75f;
-        const float k = 1.0f;
+        // PnetCLS: Fully Connected 1
+        // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
-        // create a lrn primitive descriptor
-        auto lrn_desc = lrn_forward::desc(prop_kind::forward,
-                                          algorithm::lrn_across_channels, relu_pd.dst_desc(), local_size,
-                                          alpha, beta, k);
-        auto lrn_pd = lrn_forward::primitive_desc(lrn_desc, eng);
+        // Create memory descriptors and memory objects for src and dst. In this
+        // example, NCHW layout is assumed.
 
-        // create lrn dst memory
-        auto lrn_dst_memory = memory(lrn_pd.dst_desc(), eng);
+        std::int fc1_output_size = 128;
+        memory::dims src_dims_fc1 = {batch, 64, patch_size, patch_size};
+        memory::dims weights_dims_fc1 = {fc1_output_size, 64, patch_size, patch_size};
+        memory::dims bias_dims_fc1 = {fc1_output_size};
+        memory::dims dst_dims_fc1 = {batch, fc1_output_size};
 
-        // create workspace only in training and only for forward primitive
-        // query lrn_pd for workspace, this memory will be shared with forward lrn
-        auto lrn_workspace_memory = memory(lrn_pd.workspace_desc(), eng);
+        auto src_md_fc1 = memory::desc(src_dims_fc1, dt::f32, tag::nchw);
+        auto bias_md_fc1 = memory::desc(bias_dims_fc1, dt::f32, tag::a);
+        auto dst_md_fc1 = memory::desc(dst_dims_fc1, dt::f32, tag::nc);
+        auto src_mem_fc1 = memory(src_md_fc1, eng);
+        auto bias_mem_fc1 = memory(bias_md_fc1, eng);
+        auto dst_mem_fc1 = memory(dst_md_fc1, eng);
 
-        // finally create a lrn primitive
-        net_fwd.push_back(lrn_forward(lrn_pd));
-        net_fwd_args.push_back(
-            {{DNNL_ARG_SRC, relu_dst_memory}, {DNNL_ARG_DST, lrn_dst_memory}, {DNNL_ARG_WORKSPACE, lrn_workspace_memory}});
+        // float data type is used for user data
+        std::vector<float> fc1_weights(product(weights_dims_fc1));
+        std::vector<float> fc1_bias(product(bias_dims_fc1));
 
-        // AlexNet: pool
-        // {batch, 96, 55, 55} -> {batch, 96, 27, 27}
-        // kernel: {3, 3}
-        // strides: {2, 2}
+        int limit = sqrt(6 / (kernel_size * kernel_size + fc1_output_size))
+            std::uniform_real_distribution<double>
+                distribution_fc1(-limit, limit);
 
-        memory::dims pool_dst_tz = {batch, 96, 27, 27};
-        memory::dims pool_kernel = {3, 3};
-        memory::dims pool_strides = {2, 2};
-        memory::dims pool_padding = {0, 0};
+        // initializing non-zero values for weights and bias
+        for (size_t i = 0; i < conv_weights.size(); ++i)
+                fc1_weights[i] = distribution_fc1(generator);
+        for (size_t i = 0; i < conv_bias.size(); ++i)
+                fc1_bias[i] = distribution_fc1(generator);
 
-        // create memory for pool dst data in user format
-        auto pool_user_dst_memory = memory({{pool_dst_tz}, dt::f32, tag::nchw}, eng);
+        // Create memory object for user's layout for weights. In this example, OIHW
+        // is assumed.
+        auto user_weights_mem_fc1 = memory({weights_dims_fc1, dt::f32, tag::oihw}, eng);
+        write_to_dnnl_memory(fc1_bias.data(), bias_mem_fc1);
+        write_to_dnnl_memory(fc1_weights.data(), user_weights_mem_fc1);
 
-        // create pool dst memory descriptor in format any for bfloat16 data type
-        auto pool_dst_md = memory::desc({pool_dst_tz}, dt::bf16, tag::any);
+        auto weights_md_fc1 = memory::desc(weights_dims_fc1, dt::f32, tag::any);
 
-        // create a pooling primitive descriptor
-        auto pool_desc = pooling_forward::desc(prop_kind::forward,
-                                               algorithm::pooling_max, lrn_dst_memory.get_desc(), pool_dst_md,
-                                               pool_strides, pool_kernel, pool_padding, pool_padding);
-        auto pool_pd = pooling_forward::primitive_desc(pool_desc, eng);
+        auto fc1_desc = inner_product_forward::desc(prop_kind::forward_training, src_md_fc1,
+                                                    weights_md_fc1, bias_md_fc1, dst_md_fc1);
 
-        // create pooling workspace memory if training
-        auto pool_workspace_memory = memory(pool_pd.workspace_desc(), eng);
+        // Create primitive post-ops (ReLU).
+        const float scale = 1.0f;
+        const float alpha = 0.f;
+        const float beta = 0.f;
 
-        // create a pooling primitive
-        net_fwd.push_back(pooling_forward(pool_pd));
-        // leave DST unknown for now (see the next reorder)
-        net_fwd_args.push_back({{DNNL_ARG_SRC, lrn_dst_memory},
-                                // delay putting DST until reorder (if needed)
-                                {DNNL_ARG_WORKSPACE, pool_workspace_memory}});
+        post_ops fc1_ops;
+        fc1_ops.append_eltwise(
+            scale, algorithm::eltwise_relu, alpha, beta);
+        primitive_attr fc1_attr;
+        fc1_attr.set_post_ops(fc1_ops);
 
-        // create reorder primitive between pool dst and user dst format
-        // if needed
-        auto pool_dst_memory = pool_user_dst_memory;
-        if (pool_pd.dst_desc() != pool_user_dst_memory.get_desc())
-        {
-                pool_dst_memory = memory(pool_pd.dst_desc(), eng);
-                net_fwd_args.back().insert({DNNL_ARG_DST, pool_dst_memory});
+        auto fc1_pd = inner_product_forward::primitive_desc(
+            fc1_desc, fc1_attr, engine);
+        
+        // Create the primitive.
+        auto fc1_prim = inner_product_forward(fc1_pd);
+        // Primitive arguments.
+        std::unordered_map<int, memory> fc1_args;
+        fc1_args.insert({DNNL_ARG_SRC, relu_dst_memory});
+        fc1_args.insert({DNNL_ARG_WEIGHTS, user_weights_mem_fc1});
+        fc1_args.insert({DNNL_ARG_BIAS, bias_mem_fc1});
+        fc1_args.insert({DNNL_ARG_DST, dst_mem_fc1});
 
-                net_fwd.push_back(reorder(pool_dst_memory, pool_user_dst_memory));
-                net_fwd_args.push_back({{DNNL_ARG_FROM, pool_dst_memory},
-                                        {DNNL_ARG_TO, pool_user_dst_memory}});
-        }
-        else
-        {
-                net_fwd_args.back().insert({DNNL_ARG_DST, pool_dst_memory});
-        }
+        // PnetCLS: Fully Connected 2
+        // {batch, 64, patch_size, patch_size} -> {batch, fc2_output_size}
+
+        // Create memory descriptors and memory objects for src and dst. In this
+        // example, NCHW layout is assumed.
+
+        std::int fc2_output_size = 1;
+        memory::dims src_dims_fc2 = {batch, fc1_output_size};
+        memory::dims weights_dims_fc2 = {fc2_output_size, fc1_output_size};
+        memory::dims bias_dims_fc2 = {fc2_output_size};
+        memory::dims dst_dims_fc2 = {batch, fc2_output_size};
+
+        auto src_md_fc2 = memory::desc(src_dims_fc2, dt::f32, tag::nchw);
+        auto bias_md_fc2 = memory::desc(bias_dims_fc2, dt::f32, tag::a);
+        auto dst_md_fc2 = memory::desc(dst_dims_fc2, dt::f32, tag::nc);
+        auto src_mem_fc2 = memory(src_md_fc2, eng);
+        auto bias_mem_fc2 = memory(bias_md_fc2, eng);
+        auto dst_mem_fc2 = memory(dst_md_fc2, eng);
+
+        // float data type is used for user data
+        std::vector<float> fc2_weights(product(weights_dims_fc2));
+        std::vector<float> fc2_bias(product(bias_dims_fc2));
+
+        int limit = sqrt(6 / (fc1_output_size + fc2_output_size))
+        std::uniform_real_distribution<double> distribution_fc2(-limit, limit);
+
+        // initializing non-zero values for weights and bias
+        for (size_t i = 0; i < conv_weights.size(); ++i)
+                fc2_weights[i] = distribution_fc2(generator);
+        for (size_t i = 0; i < conv_bias.size(); ++i)
+                fc2_bias[i] = distribution_fc2(generator);
+
+        // Create memory object for user's layout for weights. In this example, OIHW
+        // is assumed.
+        auto user_weights_mem_fc2 = memory({weights_dims_fc2, dt::f32, tag::oihw}, eng);
+        write_to_dnnl_memory(fc2_bias.data(), bias_mem_fc2);
+        write_to_dnnl_memory(fc2_weights.data(), user_weights_mem_fc2);
+
+        auto weights_md_fc2 = memory::desc(weights_dims_fc2, dt::f32, tag::any);
+
+        auto fc2_desc = inner_product_forward::desc(prop_kind::forward_training, src_md_fc2,
+                                                    weights_md_fc2, bias_md_fc2, dst_md_fc2);
+
+        // Create primitive post-ops (Sigmoid).
+        //const float scale = 1.0f;
+        //const float alpha = 0.f;
+        //const float beta = 0.f;
+
+        post_ops fc2_ops;
+        fc2_ops.append_eltwise(
+            scale, algorithm::eltwise_logistic, alpha, beta);
+        primitive_attr fc2_attr;
+        fc2_attr.set_post_ops(fc2_ops);
+
+        auto fc2_pd = inner_product_forward::primitive_desc(
+            fc2_desc, fc2_attr, engine);
+
+        // Create the primitive.
+        auto fc2_prim = inner_product_forward(fc2_pd);
+        // Primitive arguments.
+        std::unordered_map<int, memory> fc2_args;
+        fc2_args.insert({DNNL_ARG_SRC, dst_mem_fc1});
+        fc2_args.insert({DNNL_ARG_WEIGHTS, user_weights_mem_fc2});
+        fc2_args.insert({DNNL_ARG_BIAS, bias_mem_fc2});
+        fc2_args.insert({DNNL_ARG_DST, dst_mem_fc2});
 
         //-----------------------------------------------------------------------
         //----------------- Backward Stream -------------------------------------
