@@ -97,13 +97,13 @@ void simple_net(engine::kind engine_kind)
         int conv1 = Conv2D(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, 
                algorithm::eltwise_relu, input_memory, net_fwd, net_fwd_args, eng);
 
-        std::cout << "I created the first convolutional layer!\n";
+        std::cout << "I created the first convolutional layer: " << net_fwd_args.size() << "!\n";
 
         // pnetcls: conv
         // {batch, 1, 32, 32} (x) {64, 1, 3, 3} -> {batch, 96, 55, 55}
         // strides: {4, 4}
 
-        int conv2 = Conv2D(batch, patch_size, n_kernels, kernel_size, stride, padding, 2, 
+        int conv2 = Conv2D(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, 
                algorithm::eltwise_relu, net_fwd_args[conv1][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the second convolutional layer!\n";
@@ -133,13 +133,14 @@ void simple_net(engine::kind engine_kind)
         //----------------- Backward Stream -------------------------------------
         // ... user diff_data in float data type ...
 
+        std::cout << "Creating the second Dense layer (back)\n";
         int fc2_back = Dense_back(net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
-
+        std::cout << "Creating the first Dense layer (back)\n";
         int fc1_back = Dense_back(net_fwd_args[fc1], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
-
-        int conv2_back = Conv2D_back(conv2, stride, padding, 2, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
-
-        int conv1_back = Conv2D_back(conv1, stride, padding, 1, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
+        std::cout << "Creating the second convolutional layer (back)\n";
+        int conv2_back = Conv2D_back(net_fwd_args[conv2], stride, padding, 1, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
+        std::cout << "Creating the first convolutional layer (back)\n";
+        int conv1_back = Conv2D_back(net_fwd_args[conv1], stride, padding, 1, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
         
 
         // didn't we forget anything?

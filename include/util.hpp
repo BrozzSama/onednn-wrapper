@@ -4,8 +4,8 @@
 // (md of primitive ie. the format supported by the primitive running on eng, memory with type that needs to be checked,
 // network, network arguments, engine)
 dnnl::memory checkType(dnnl::memory::desc md_true_type, dnnl::memory mem_to_check, 
-    std::vector<dnnl::primitive> net, 
-    std::vector<std::unordered_map<int, dnnl::memory>> net_args, 
+    std::vector<dnnl::primitive> &net, 
+    std::vector<std::unordered_map<int, dnnl::memory>> &net_args, 
     dnnl::engine eng)
 {
     auto mem_reordered = mem_to_check;
