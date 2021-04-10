@@ -1,5 +1,5 @@
 #===============================================================================
-# Copyright 2019-2020 Intel Corporation
+# Copyright 2019-2021 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ else()
 endif()
 
 message(STATUS "DNNLROOT: ${DNNLROOT}")
+message(STATUS "DNNLDIR: ${dnnl_DIR}")
 
 include_directories(${DNNLROOT}/examples)
 
@@ -83,13 +84,20 @@ else()
     endif()
 endif()
 
-if(WIN32 AND DNNL_SYCL_DPCPP)
+if(WIN32 AND DNNL_WITH_SYCL)
     # Ignore warning LNK4078: multiple '__CLANG_OFFLOAD_BUNDLE__sycl-spi'
     # sections found with different attributes
     append(CMAKE_EXE_LINKER_FLAGS "-Xlinker /IGNORE:4078")
 endif()
 
-find_package(dnnl 2.0.0 CONFIG REQUIRED HINTS ${DNNLROOT})
+# DNNL_CONFIGURATION is only used by oneAPI CMake config and ignored otherwise.
+get_filename_component(DNNL_CONFIGURATION "${DNNLROOT}" ABSOLUTE)
+get_filename_component(DNNL_CONFIGURATION "${DNNL_CONFIGURATION}" NAME)
+# The hint can be used to find CMake config in oneAPI directory layout.
+set(ONEAPI_CMAKE_CONFIG_HINT "../..")
+
+find_package(dnnl CONFIG REQUIRED HINTS ${DNNLROOT} ${ONEAPI_CMAKE_CONFIG_HINT})
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${DNNL_COMPILE_FLAGS}")
 
 if(WIN32)
