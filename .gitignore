@@ -11,4 +11,4 @@ run.sh.*
 .vscode/*
 
 data/
-
+shuffled_data/

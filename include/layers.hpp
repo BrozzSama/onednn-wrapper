@@ -364,6 +364,286 @@ int Dense_back(std::unordered_map<int, dnnl::memory> dense_fwd,
     return net.size() - 1;
 }
 
+int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true, 
+                           std::vector<dnnl::primitive> &net,
+                           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+                           dnnl::engine eng)
+{
+
+    dnnl::memory::dims dim_nc = {y_hat.get_desc().dims()[0], 1};
+    dnnl::memory::dims dim_nc_tt = {1, y_hat.get_desc().dims()[0]};
+    dnnl::memory::dims dim_scalar = {1};
+
+    // Perform elementwise log on y_hat
+    
+    auto y_hat_log_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_hat_log = memory(y_hat_log_md, eng);
+
+    auto y_hat_log_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_log,
+                                                y_hat.get_desc(), 0.f, 0.f);
+    auto y_hat_log_pd = dnnl::eltwise_forward::primitive_desc(y_hat_log_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_hat_log_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+                        {DNNL_ARG_DST, y_hat_log}});
+
+    // Perform elementwise linear on y_hat with alpha = -1; beta = 1 ie. 1-y_hat
+
+    auto y_hat_inv_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_hat_inv = memory(y_hat_inv_md, eng);
+
+    auto y_hat_inv_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
+                                                y_hat.get_desc(), -1.f, 1.f);
+    auto y_hat_inv_pd = dnnl::eltwise_forward::primitive_desc(y_hat_inv_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_hat_inv_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+                        {DNNL_ARG_DST, y_hat_inv}});
+
+    // Perform log on previously obtained element ie. log(1-y_hat)
+
+    auto y_hat_inv_log_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_hat_inv_log = memory(y_hat_inv_log_md, eng);
+
+    auto y_hat_inv_log_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_log,
+                                                y_hat_inv.get_desc(), 0.f, 0.f);
+    auto y_hat_inv_log_pd = dnnl::eltwise_forward::primitive_desc(y_hat_inv_log_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_hat_inv_log_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_hat_inv},
+                        {DNNL_ARG_DST, y_hat_inv_log}});
+
+    // Reorder y_true from nc to cn {batch, 1} -> {1, batch}
+
+    auto y_true_reordered_md = dnnl::memory::desc(dim_nc_tt, dt::f32, tag::nc);
+    auto y_true_reordered = memory(y_true_reordered_md, eng);
+
+    net.push_back(dnnl::reorder(y_true, y_true_reordered));
+    net_args.push_back({{DNNL_ARG_FROM, y_true},
+                            {DNNL_ARG_TO, y_true_reordered}});
+
+    // Perform elementwise linear on y_true_reordered with alpha = -1; beta = 1 ie. 1-y_true
+
+    auto y_true_inv_reordered_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_true_inv_reordered = memory(y_true_inv_reordered_md, eng);
+
+    auto y_true_inv_reordered_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
+                                                y_true_reordered.get_desc(), -1.f, 1.f);
+    auto y_true_inv_reordered_pd = dnnl::eltwise_forward::primitive_desc(y_true_inv_reordered_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_true_inv_reordered_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_true_reordered},
+                        {DNNL_ARG_DST, y_true_inv_reordered}});
+
+    // Perform matmul(y_true_reordered, log(y_hat))
+
+    auto add1_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto add1 = memory(add1_md, eng);
+
+    auto matmul1_desc = dnnl::matmul::desc(y_true_reordered_md, y_hat_log_md, NULL, add1_md);
+    auto matmul1_pd = dnnl::matmul::primitive_desc(matmul1_desc, eng);
+
+    net.push_back(dnnl::matmul(matmul1_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_true_reordered},
+                        {DNNL_ARG_WEIGHTS, y_hat_log_md},
+                        {DNNL_ARG_DST, add1}});
+
+
+    // Perform matmul(1-y_true_reordered, log(1-y_hat))
+
+    auto add2_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto add2 = memory(add2_md, eng);
+
+    auto matmul2_desc = dnnl::matmul::desc(y_true_inv_reordered_md, y_hat_inv_log_md, NULL, add2_md);
+    auto matmul2_pd = dnnl::matmul::primitive_desc(matmul2_desc, eng);
+
+    net.push_back(dnnl::matmul(matmul2_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_true_inv_reordered},
+                        {DNNL_ARG_WEIGHTS, y_hat_inv_log_md},
+                        {DNNL_ARG_DST, add2}});
+
+    // Sum obtained values (should be scalars)
+
+    auto loss_sum_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto loss_sum = memory(loss_sum_md, eng);
+
+    std::vector<dnnl::memory::desc> add_vector_md = {add1_md, add2_md};
+    std::vector<dnnl::memory> add_vector = {add1, add2};
+    std::vector<std::float> scales = {1.f, 1.f};
+
+    auto loss_sum_pd = dnnl::sum::primitive_desc(scales, add_vector_md, eng);
+
+    net.push_back(dnnl::sum(loss_sum_pd));
+
+    std::unordered_map<int, memory> sum_args;
+
+    sum_args.insert({DNNL_ARG_DST, loss_sum});
+    for (int i = 0; i<add_vector.size(); i++){
+        sum_args.insert({DNN_ARG_SRC + i, add_vector[i]});
+    }
+
+    net_args.push_back(sum_args);
+    
+
+    // Divide by -N using elementwise linear
+
+    auto loss_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto loss = memory(loss_md, eng);
+
+    float batch_size_inv = 1/y_true.dims()[0];
+
+    auto loss_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
+                                                y_true_reordered.get_desc(), -batch_size_inv, 0.f);
+    auto loss_pd = dnnl::eltwise_forward::primitive_desc(loss_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(loss_pd));
+    net_args.push_back({{DNNL_ARG_SRC, loss_sum},
+                        {DNNL_ARG_DST, loss}});   
+    
+    return net.size() - 1;
+
+}
+
+int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true, 
+                           std::vector<dnnl::primitive> &net,
+                           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+                           dnnl::engine eng)
+{
+
+    dnnl::memory::dims dim_nc = {y_hat.get_desc().dims()[0], 1};
+    dnnl::memory::dims dim_nc_tt = {1, y_hat.get_desc().dims()[0]};
+    dnnl::memory::dims dim_scalar = {1};
+
+    // Perform elementwise log on y_hat
+    
+    auto y_hat_log_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_hat_log = memory(y_hat_log_md, eng);
+
+    auto y_hat_log_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_log,
+                                                y_hat.get_desc(), 0.f, 0.f);
+    auto y_hat_log_pd = dnnl::eltwise_forward::primitive_desc(y_hat_log_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_hat_log_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+                        {DNNL_ARG_DST, y_hat_log}});
+
+    // Perform elementwise linear on y_hat with alpha = -1; beta = 1 ie. 1-y_hat
+
+    auto y_hat_inv_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_hat_inv = memory(y_hat_inv_md, eng);
+
+    auto y_hat_inv_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
+                                                y_hat.get_desc(), -1.f, 1.f);
+    auto y_hat_inv_pd = dnnl::eltwise_forward::primitive_desc(y_hat_inv_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_hat_inv_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+                        {DNNL_ARG_DST, y_hat_inv}});
+
+    // Perform log on previously obtained element ie. log(1-y_hat)
+
+    auto y_hat_inv_log_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_hat_inv_log = memory(y_hat_inv_log_md, eng);
+
+    auto y_hat_inv_log_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_log,
+                                                y_hat_inv.get_desc(), 0.f, 0.f);
+    auto y_hat_inv_log_pd = dnnl::eltwise_forward::primitive_desc(y_hat_inv_log_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_hat_inv_log_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_hat_inv},
+                        {DNNL_ARG_DST, y_hat_inv_log}});
+
+    // Reorder y_true from nc to cn {batch, 1} -> {1, batch}
+
+    auto y_true_reordered_md = dnnl::memory::desc(dim_nc_tt, dt::f32, tag::nc);
+    auto y_true_reordered = memory(y_true_reordered_md, eng);
+
+    net.push_back(dnnl::reorder(y_true, y_true_reordered));
+    net_args.push_back({{DNNL_ARG_FROM, y_true},
+                            {DNNL_ARG_TO, y_true_reordered}});
+
+    // Perform elementwise linear on y_true_reordered with alpha = -1; beta = 1 ie. 1-y_true
+
+    auto y_true_inv_reordered_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    auto y_true_inv_reordered = memory(y_true_inv_reordered_md, eng);
+
+    auto y_true_inv_reordered_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
+                                                y_true_reordered.get_desc(), -1.f, 1.f);
+    auto y_true_inv_reordered_pd = dnnl::eltwise_forward::primitive_desc(y_true_inv_reordered_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(y_true_inv_reordered_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_true_reordered},
+                        {DNNL_ARG_DST, y_true_inv_reordered}});
+
+    // Perform matmul(y_true_reordered, log(y_hat))
+
+    auto add1_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto add1 = memory(add1_md, eng);
+
+    auto matmul1_desc = dnnl::matmul::desc(y_true_reordered_md, y_hat_log_md, NULL, add1_md);
+    auto matmul1_pd = dnnl::matmul::primitive_desc(matmul1_desc, eng);
+
+    net.push_back(dnnl::matmul(matmul1_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_true_reordered},
+                        {DNNL_ARG_WEIGHTS, y_hat_log_md},
+                        {DNNL_ARG_DST, add1}});
+
+
+    // Perform matmul(1-y_true_reordered, log(1-y_hat))
+
+    auto add2_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto add2 = memory(add2_md, eng);
+
+    auto matmul2_desc = dnnl::matmul::desc(y_true_inv_reordered_md, y_hat_inv_log_md, NULL, add2_md);
+    auto matmul2_pd = dnnl::matmul::primitive_desc(matmul2_desc, eng);
+
+    net.push_back(dnnl::matmul(matmul2_pd));
+    net_args.push_back({{DNNL_ARG_SRC, y_true_inv_reordered},
+                        {DNNL_ARG_WEIGHTS, y_hat_inv_log_md},
+                        {DNNL_ARG_DST, add2}});
+
+    // Sum obtained values (should be scalars)
+
+    auto loss_sum_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto loss_sum = memory(loss_sum_md, eng);
+
+    std::vector<dnnl::memory::desc> add_vector_md = {add1_md, add2_md};
+    std::vector<dnnl::memory> add_vector = {add1, add2};
+    std::vector<std::float> scales = {1.f, 1.f};
+
+    auto loss_sum_pd = dnnl::sum::primitive_desc(scales, add_vector_md, eng);
+
+    net.push_back(dnnl::sum(loss_sum_pd));
+
+    std::unordered_map<int, memory> sum_args;
+
+    sum_args.insert({DNNL_ARG_DST, loss_sum});
+    for (int i = 0; i<add_vector.size(); i++){
+        sum_args.insert({DNN_ARG_SRC + i, add_vector[i]});
+    }
+
+    net_args.push_back(sum_args);
+    
+
+    // Divide by -N using elementwise linear
+
+    auto loss_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::a);
+    auto loss = memory(loss_md, eng);
+
+    float batch_size_inv = 1/y_true.dims()[0];
+
+    auto loss_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
+                                                y_true_reordered.get_desc(), -batch_size_inv, 0.f);
+    auto loss_pd = dnnl::eltwise_forward::primitive_desc(loss_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(loss_pd));
+    net_args.push_back({{DNNL_ARG_SRC, loss_sum},
+                        {DNNL_ARG_DST, loss}});   
+    
+    return net.size() - 1;
+
+}
+
 /*
 
 postOp(layer){

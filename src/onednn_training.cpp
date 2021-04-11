@@ -47,20 +47,31 @@ void simple_net(engine::kind engine_kind)
         // RNG for ALL purposes
         std::default_random_engine generator;
 
-        auto path = "data/skull_32_vessel.npy";
+        // Load dataset
+        auto dataset_path = "shuffled_data/full_dataset.npy";
         std::vector<unsigned long> shape;
         bool fortran_order;
-        std::vector<double> net_src;
+        std::vector<double> dataset;
 
         shape.clear();
-        net_src.clear();
+        dataset.clear();
 
-        npy::LoadArrayFromNumpy(path, shape, fortran_order, net_src);
+        npy::LoadArrayFromNumpy(dataset_path, shape, fortran_order, dataset);
 
         std::cout << "shape: ";
         for (size_t i = 0; i < shape.size(); i++)
                 std::cout << shape[i] << ", ";
         std::cout << "\n";
+        
+        // Load labels
+        auto labels_path = "shuffled_data/labels.npy";
+        std::vector<unsigned long> shape_labels;
+        std::vector<double> dataset_labels;
+
+        shape_labels.clear();
+        dataset_labels.clear();
+
+        npy::LoadArrayFromNumpy(labels_path, shape_labels, fortran_order, dataset_labels);
 
         using tag = memory::format_tag;
         using dt = memory::data_type;
@@ -84,10 +95,14 @@ void simple_net(engine::kind engine_kind)
         int padding = kernel_size - 1;
         padding /= 1;
 
-        // Load input inside engine
+        // Load inputs inside engine
         memory::dims input_dim = {batch, 1, patch_size, patch_size};
         auto input_memory = memory({{input_dim}, dt::f32, tag::nchw}, eng);
-        write_to_dnnl_memory(net_src.data(), input_memory);
+        write_to_dnnl_memory(dataset.data(), input_memory);
+
+        memory::dims labels_dim = {batch};
+        auto labels_memory = memory({{labels_dim}, dt::f32, tag::a}, eng);
+        write_to_dnnl_memory(dataset_labels.data(), labels_memory);
 
         std::cout << "I wrote the data in Source!\n";
 
@@ -128,6 +143,10 @@ void simple_net(engine::kind engine_kind)
                              net_fwd_args[fc1][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the second dense layer!\n";
+
+        // Cross entropy loss
+
+        
 
 
         //-----------------------------------------------------------------------
