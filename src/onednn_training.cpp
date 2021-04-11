@@ -81,7 +81,8 @@ void simple_net(engine::kind engine_kind)
         // Compute the padding to preserve the same dimension in input and output
         // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
         // padding /= 2;
-        const int padding = kernel_size - 1;
+        int padding = kernel_size - 1;
+        padding /= 1;
 
         // Load input inside engine
         memory::dims input_dim = {batch, 1, patch_size, patch_size};
@@ -133,13 +134,13 @@ void simple_net(engine::kind engine_kind)
         //----------------- Backward Stream -------------------------------------
         // ... user diff_data in float data type ...
 
-        std::cout << "Creating the second Dense layer (back)\n";
+        std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
         int fc2_back = Dense_back(net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
-        std::cout << "Creating the first Dense layer (back)\n";
+        std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
         int fc1_back = Dense_back(net_fwd_args[fc1], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
-        std::cout << "Creating the second convolutional layer (back)\n";
+        std::cout << "Creating the second convolutional layer (back) using forward index: " << conv2 << "\n"; 
         int conv2_back = Conv2D_back(net_fwd_args[conv2], stride, padding, 1, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
-        std::cout << "Creating the first convolutional layer (back)\n";
+        std::cout << "Creating the first convolutional layer (back) using forward index: " << conv1 << "\n"; 
         int conv1_back = Conv2D_back(net_fwd_args[conv1], stride, padding, 1, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
         
 
@@ -158,6 +159,9 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_fwd.size(); ++i)
                         net_fwd.at(i).execute(s, net_fwd_args.at(i));
 
+                // Compute loss and write to diff_dst
+
+                
                 // update net_diff_dst
                 // auto net_output = pool_user_dst_memory.get_data_handle();
                 // ..user updates net_diff_dst using net_output...

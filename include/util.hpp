@@ -11,10 +11,19 @@ dnnl::memory checkType(dnnl::memory::desc md_true_type, dnnl::memory mem_to_chec
     auto mem_reordered = mem_to_check;
     if (md_true_type != mem_to_check.get_desc())
     {
+        std::cout << "Memory mismatch adding reorder primitive\n";
         auto mem_reordered = dnnl::memory(md_true_type, eng);
         net.push_back(dnnl::reorder(mem_to_check, mem_reordered));
         net_args.push_back({{DNNL_ARG_FROM, mem_to_check},
                                 {DNNL_ARG_TO, mem_reordered}});
     }
     return mem_reordered;
+}
+
+void print_vector(std::vector<dnnl::memory::dim> const &input)
+{
+    for (int i = 0; i < input.size(); i++) {
+        std::cout << input.at(i) << ' ';
+    }
+    std::cout << "\n";
 }

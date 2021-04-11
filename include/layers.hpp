@@ -23,8 +23,10 @@ int Conv2D(int batch_size, int patch_length,
 {
     std::cout << "Creating convolutional layer!\n";
     // N channels = one since we have monochromatic images (WIP)
-    dnnl::memory::dims conv_src_tz = {batch_size, 1, patch_length, patch_length};
-    dnnl::memory::dims conv_weights_tz = {n_kernels, 1, kernel_size, kernel_size};
+    //dnnl::memory::dims conv_src_tz = {batch_size, 1, patch_length, patch_length};
+    dnnl::memory::dims conv_src_tz = input.get_desc().dims();
+    // Get number of "channels" (concept of channel changes after input) from the input
+    dnnl::memory::dims conv_weights_tz = {n_kernels, conv_src_tz[1], kernel_size, kernel_size};
     dnnl::memory::dims conv_bias_tz = {n_kernels};
     dnnl::memory::dims conv_dst_tz = {batch_size, n_kernels, patch_length, patch_length};
     dnnl::memory::dims conv_strides = {stride_length, stride_length};
@@ -50,6 +52,20 @@ int Conv2D(int batch_size, int patch_length,
 
     std::cout << "Creating primitive descriptor (ma quello desc non quello dopo) for convolution\n";
 
+    std::cout << "SRC dims size: " << conv_src_md.dims().size() << "\n";
+    std::cout << "Source vector md content: " << "\n";
+    print_vector(conv_src_md.dims());
+    std::cout << "Weights dims size: " << conv_weights_md.dims().size() << "\n";
+    std::cout << "Weights vector md content: " << "\n";
+    print_vector(conv_weights_md.dims());
+    std::cout << "Dst dims size: " << conv_dst_md.dims().size() << "\n";
+    std::cout << "Dst vector md content: " << "\n";
+    print_vector(conv_dst_md.dims());
+    std::cout << "Bias dims size: " << conv_bias_md.dims().size() << "\n";
+    std::cout << "Bias vector md content: " << "\n";
+    print_vector(conv_bias_md.dims());
+    
+    
     auto conv_desc = dnnl::convolution_forward::desc(dnnl::prop_kind::forward,
                                                        dnnl::algorithm::convolution_direct, conv_src_md, conv_weights_md,
                                                        conv_bias_md, conv_dst_md, conv_strides, conv_dilates, conv_padding,
@@ -133,9 +149,22 @@ int Conv2D_back(
     auto conv_diff_dst_md = conv2d_fwd[DNNL_ARG_DST].get_desc();
     auto conv_diff_bias_md = conv2d_fwd[DNNL_ARG_BIAS].get_desc();
 
+    std::cout << "SRC dims size: " << conv_bwd_src_md.dims().size() << "\n";
+    std::cout << "Source vector md content: " << "\n";
+    print_vector(conv_bwd_src_md.dims());
+    std::cout << "Weights dims size: " << conv_diff_weights_md.dims().size() << "\n";
+    std::cout << "Weights vector md content: " << "\n";
+    print_vector(conv_diff_weights_md.dims());
+    std::cout << "Dst dims size: " << conv_diff_dst_md.dims().size() << "\n";
+    std::cout << "Dst vector md content: " << "\n";
+    print_vector(conv_diff_dst_md.dims());
+    std::cout << "Bias dims size: " << conv_diff_bias_md.dims().size() << "\n";
+    std::cout << "Bias vector md content: " << "\n";
+    print_vector(conv_diff_bias_md.dims());
+
     std::cout << "Setting dimensions\n";
     dnnl::memory::dims conv_strides = {stride_length, stride_length};
-    dnnl::memory::dims conv_dilates = {dilation};
+    dnnl::memory::dims conv_dilates = {dilation, dilation};
     dnnl::memory::dims conv_padding = {padding_length, padding_length};
 
     // Recreate forward descriptor since it is needed to create the backward primitive descriptor
