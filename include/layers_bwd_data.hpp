@@ -170,7 +170,7 @@ int Dense_back_data(dnnl::memory diff_dst,
                         {DNNL_ARG_DIFF_DST, fc_diff_dst_memory},
                         // If something does not work check this, there might be some
                         // reordering needed done in a similar fashion to cnn_training_f32.cpp
-                        {DNNL_ARG_DIFF_WEIGHTS, fc_weights}});
+                        {DNNL_ARG_WEIGHTS, fc_weights}});
     
     // Return index to locate the layer
     return net.size() - 1;

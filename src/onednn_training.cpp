@@ -83,8 +83,8 @@ void simple_net(engine::kind engine_kind)
         stream s(eng);
 
         // Vector of primitives and their execute arguments
-        std::vector<primitive> net_fwd, net_bwd_data, net_bwd_weights;
-        std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_data_args, net_bwd_weights_args;
+        std::vector<primitive> net_fwd, net_bwd_data, net_bwd_weights, net_sgd;
+        std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
 
         const int batch = shape[0];
         const int patch_size = shape[1];
@@ -158,7 +158,7 @@ void simple_net(engine::kind engine_kind)
         //----------------- Backpropagation Stream  (Data)-------------------------------------
 
         std::cout << "Creating backward Loss" << "\n";
-        int loss_back = L2_Loss_back(net_fwd_args, loss, net_bwd_data, net_bwd_data_args, eng);
+        int loss_back = L2_Loss_back(net_fwd_args, net_fwd_args[fc2][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
         int fc2_back_data = Dense_back_data(net_bwd_data_args[loss_back][DNNL_ARG_DST], net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
@@ -197,15 +197,6 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_fwd.size(); ++i)
                         net_fwd.at(i).execute(s, net_fwd_args.at(i));
 
-                // Compute loss and write to diff_dst
-
-                
-                // update net_diff_dst
-                // auto net_output = pool_user_dst_memory.get_data_handle();
-                // ..user updates net_diff_dst using net_output...
-                // some user defined func update_diff_dst(net_diff_dst.data(),
-                // net_output)
-
                 std::cout << "Backward data pass\n";
                 for (size_t i = 0; i < net_bwd_data.size(); ++i)
                         net_bwd_data.at(i).execute(s, net_bwd_data_args.at(i));
@@ -213,6 +204,7 @@ void simple_net(engine::kind engine_kind)
                 std::cout << "Backward weights pass\n";
                 for (size_t i = 0; i < net_bwd_weights.size(); ++i)
                         net_bwd_weights.at(i).execute(s, net_bwd_weights_args.at(i));
+
                 // update weights and bias using diff weights and bias
                 //
                 // auto net_diff_weights

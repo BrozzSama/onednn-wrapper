@@ -32,7 +32,7 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
     print_vector(y_true.get_desc().dims());
     std::cout << "\n";
 
-    auto loss_sub_pd = dnnl::sum::primitive_desc(scales, sub_vector_md, eng);
+    auto loss_sub_pd = dnnl::sum::primitive_desc(loss_sub_md, scales, sub_vector_md, eng);
 
     std::cout << "Created sum primitive" << "\n"; 
 
@@ -42,7 +42,7 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
 
     sum_args.insert({DNNL_ARG_DST, loss_sub});
     for (int i = 0; i<sub_vector.size(); i++){
-        sum_args.insert({DNNL_ARG_SRC + i, sub_vector[i]});
+        sum_args.insert({DNNL_ARG_MULTIPLE_SRC + i, sub_vector[i]});
     }
 
     net_args.push_back(sum_args);
@@ -81,16 +81,17 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
 
 // Net forward args is passed because a loss function contains more than one primitive
 int L2_Loss_back(std::vector<std::unordered_map<int, dnnl::memory>> &net_fwd_args, 
-                 int finish,
+                 dnnl::memory loss_sub,
                  std::vector<dnnl::primitive> &net,
                  std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
                  dnnl::engine eng)
 {
     // we want to start from the first layer of the L2 loss when dealing with the offset
-    int start = finish - L2_LOSS;
+    //int start = finish - L2_LOSS;
 
     // Get destination of subtraction, ie. the y_hat - y we use before the inner product
-    auto loss_sub = net_fwd_args[start + L2_SUB][DNNL_ARG_DST];
+    //auto loss_sub = net_fwd_args[start + L2_SUB][DNNL_ARG_DST];
+    
     dnnl::memory::dims dim_nc = {loss_sub.get_desc().dims()[0], 1};
 
     // Multiply by 2 using eltwise_linear
