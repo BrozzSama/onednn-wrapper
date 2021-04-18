@@ -10,8 +10,8 @@ full_dataset_path = os.path.join(dataset_path, "full_dataset.npy")
 label_dataset_path = os.path.join(dataset_path, "labels.npy")
 
 # NHW format
-empty_patches = np.load(empty_patches_path)
-vessel_patches = np.load(vessel_patches_path)
+empty_patches = np.load(empty_patches_path)[0:50, ...]
+vessel_patches = np.load(vessel_patches_path)[0:50, ...]
 
 # Create ground truth
 empty_patches_label = np.zeros(empty_patches.shape[0])

@@ -41,7 +41,7 @@
 #include "../include/layers_bwd_data.hpp"
 #include "../include/layers_bwd_weights.hpp"
 #include "../include/losses.hpp"
-
+#include "../include/weights_update.hpp"
 
 using namespace dnnl;
 
@@ -91,7 +91,7 @@ void simple_net(engine::kind engine_kind)
         const int stride = 1;
         const int kernel_size = 3;
         const int n_kernels = 64;
-
+        const float learning_rate = 0.01;
         // Compute the padding to preserve the same dimension in input and output
         // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
         // padding /= 2;
@@ -110,6 +110,10 @@ void simple_net(engine::kind engine_kind)
         write_to_dnnl_memory(dataset_labels.data(), labels_memory);
 
         std::cout << "I wrote the label data!\n";
+
+        // Prepare memory that will host loss
+
+        std::vector<double> curr_loss(batch);
 
         // pnetcls: conv
         // {batch, 1, 32, 32} (x) {64, 1, 3, 3} -> {batch, 96, 55, 55}
@@ -179,12 +183,29 @@ void simple_net(engine::kind engine_kind)
         std::cout << "Creating the first convolutional layer (back) using forward index: " << conv1 << "\n"; 
         int conv1_back_weights = Conv2D_back_weights(net_bwd_data_args[conv2_back_data][DNNL_ARG_DIFF_SRC] , net_fwd_args[conv1], stride, padding, 1, algorithm::eltwise_relu, net_bwd_weights, net_bwd_weights_args, eng);
 
+        //-----------------------------------------------------------------------
+        //----------------- Weights update -------------------------------------
+        updateWeights_SGD(net_fwd_args[conv1], net_bwd_weights_args[conv1_back_weights], 
+                   learning_rate, net_sgd, net_sgd_args, eng);
+        updateWeights_SGD(net_fwd_args[conv2], net_bwd_weights_args[conv2_back_weights], 
+                   learning_rate, net_sgd, net_sgd_args, eng);
+        updateWeights_SGD(net_fwd_args[fc1], net_bwd_weights_args[fc1_back_weights], 
+                   learning_rate, net_sgd, net_sgd_args, eng);
+        updateWeights_SGD(net_fwd_args[fc2], net_bwd_weights_args[fc2_back_weights], 
+                   learning_rate, net_sgd, net_sgd_args, eng);
+ 
+
         // didn't we forget anything?
         assert(net_fwd.size() == net_fwd_args.size() && "something is missing");
         assert(net_bwd_data.size() == net_bwd_data_args.size() && "something is missing");
         assert(net_bwd_weights.size() == net_bwd_weights_args.size() && "something is missing");
 
         int n_iter = 50; // number of iterations for training
+
+        unsigned long batch_size = batch;
+
+        const unsigned long loss_dim [] = {batch_size};
+
         // execute
         while (n_iter)
         {
@@ -197,29 +218,37 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_fwd.size(); ++i)
                         net_fwd.at(i).execute(s, net_fwd_args.at(i));
 
+                // Compute the gradients with respect to the outputs
+
                 std::cout << "Backward data pass\n";
                 for (size_t i = 0; i < net_bwd_data.size(); ++i)
                         net_bwd_data.at(i).execute(s, net_bwd_data_args.at(i));
+
+                // Use the previous gradients to compute gradients with respect to the weights
 
                 std::cout << "Backward weights pass\n";
                 for (size_t i = 0; i < net_bwd_weights.size(); ++i)
                         net_bwd_weights.at(i).execute(s, net_bwd_weights_args.at(i));
 
-                // update weights and bias using diff weights and bias
-                //
-                // auto net_diff_weights
-                //     = conv_user_diff_weights_memory.get_data_handle();
-                // auto net_diff_bias = conv_diff_bias_memory.get_data_handle();
-                //
-                // ...user updates weights and bias using diff weights and bias...
-                //
-                // some user defined func update_weights(conv_weights.data(),
-                // conv_bias.data(), net_diff_weights, net_diff_bias);
+
+                // Time to update the weights!
+                std::cout << "Weights update\n";
+                for (size_t i = 0; i < net_sgd.size(); ++i)
+                        net_sgd.at(i).execute(s, net_sgd_args.at(i));
+
+                if (n_iter % 10 == 0){
+                        s.wait();
+                        read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+                        std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
+                        npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
+
+                }
 
                 --n_iter;
         }
 
         s.wait();
+
 }
 
 int main(int argc, char **argv)
