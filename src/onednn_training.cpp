@@ -113,7 +113,11 @@ void simple_net(engine::kind engine_kind)
 
         // Prepare memory that will host loss
 
-        std::vector<double> curr_loss(batch);
+        std::vector<float> curr_loss(batch);
+
+        for (int i = 0; i<curr_loss.size(); i++){
+                curr_loss[i] = 65;
+        }
 
         // pnetcls: conv
         // {batch, 1, 32, 32} (x) {64, 1, 3, 3} -> {batch, 96, 55, 55}
@@ -236,18 +240,19 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_sgd.size(); ++i)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
-                if (n_iter % 10 == 0){
+                if (n_iter % 10 == 0){  
                         s.wait();
                         read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+                        print_vector2(curr_loss);
                         std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
                         npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
-
                 }
 
                 --n_iter;
         }
 
-        s.wait();
+
+
 
 }
 

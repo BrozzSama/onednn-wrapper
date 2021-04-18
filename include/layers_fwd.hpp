@@ -124,8 +124,8 @@ int Conv2D(int batch_size, int patch_length,
     std::cout << "Weights check OK!\n";
     auto conv_bias_memory = checkType(conv_pd.bias_desc(), conv_user_bias_memory, net, net_args, eng);
     std::cout << "Bias check ok!\n";
-    //auto conv_src_memory = checkType(conv_pd.src_desc(), input, net, net_args, eng);
-    auto conv_src_memory = input;
+    auto conv_src_memory = checkType(conv_pd.src_desc(), input, net, net_args, eng);
+    //auto conv_src_memory = input;
     std::cout << "Source check OK!\n";
     std::cout << "Types tested!\n";
 
