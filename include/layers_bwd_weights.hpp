@@ -4,7 +4,6 @@
 #include <stdexcept>
 #include <cmath>
 #include <random>
-#include "util.hpp"
 
 // Macro definitions to recover L2 loss layer in backward
 
@@ -112,12 +111,14 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
 }
 
 int Dense_back_weights(dnnl::memory diff_dst,
-           std::unordered_map<int, dnnl::memory> dense_fwd, 
+           std::unordered_map<int, dnnl::memory> dense_fwd,
            dnnl::algorithm activation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
 {
+    // INPUT: diff_dst (ie. diff_src of previous layer), src OUTPUT: diff_weights, diff_bias
+
     // Create memory area for backward pass (get types from dense_fwd)
     auto fc_diff_weights_memory = dnnl::memory(dense_fwd[DNNL_ARG_WEIGHTS].get_desc(), eng);
     auto fc_diff_bias_memory = dnnl::memory(dense_fwd[DNNL_ARG_BIAS].get_desc(), eng);
@@ -125,6 +126,7 @@ int Dense_back_weights(dnnl::memory diff_dst,
     // create memory descriptors for f32 convolution data
     auto fc_bwd_src_md = dense_fwd[DNNL_ARG_SRC].get_desc();
     auto fc_diff_weights_md = dense_fwd[DNNL_ARG_WEIGHTS].get_desc();
+
     // This is only used to recreate fwd primitive
     auto fc_fwd_dst_md = dense_fwd[DNNL_ARG_DST].get_desc();
     auto fc_diff_dst_md = diff_dst.get_desc();

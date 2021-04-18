@@ -4,7 +4,6 @@
 #include <stdexcept>
 #include <cmath>
 #include <random>
-#include "util.hpp"
 
 // Macro definitions to recover L2 loss layer in backward
 

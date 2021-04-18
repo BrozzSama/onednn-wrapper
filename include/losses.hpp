@@ -1,4 +1,9 @@
+#include "oneapi/dnnl/dnnl.hpp"
 
+#include <iostream>
+#include <stdexcept>
+#include <cmath>
+#include <random>
 
 int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true, 
                            std::vector<dnnl::primitive> &net,
@@ -7,7 +12,7 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
 {
 
     dnnl::memory::dims dim_nc = {y_hat.get_desc().dims()[0], 1};
-    dnnl::memory::dims dim_scalar = {1};
+    dnnl::memory::dims dim_scalar = {1, 1};
 
     // 1) Sum y_hat - y_true 
 
@@ -20,41 +25,62 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
     std::vector<dnnl::memory::desc> sub_vector_md = {y_hat.get_desc(), y_true.get_desc()};
     std::vector<dnnl::memory> sub_vector = {y_hat, y_true};
 
+    std::cout << "The dimensions of y_hat are: ";
+    print_vector(y_hat.get_desc().dims());
+    std::cout << "\n";
+    std::cout << "The dimensions of y_true are: ";
+    print_vector(y_true.get_desc().dims());
+    std::cout << "\n";
+
     auto loss_sub_pd = dnnl::sum::primitive_desc(scales, sub_vector_md, eng);
+
+    std::cout << "Created sum primitive" << "\n"; 
 
     net.push_back(dnnl::sum(loss_sub_pd));
 
-    std::unordered_map<int, memory> sum_args;
+    std::unordered_map<int, dnnl::memory> sum_args;
 
     sum_args.insert({DNNL_ARG_DST, loss_sub});
     for (int i = 0; i<sub_vector.size(); i++){
-        sum_args.insert({DNN_ARG_SRC + i, sub_vector[i]});
+        sum_args.insert({DNNL_ARG_SRC + i, sub_vector[i]});
     }
 
     net_args.push_back(sum_args);
 
     // 2) Inner product <(y_hat - y_true), (y_hat-true)>
 
-    dnnl::memory::desc loss_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    /*dnnl::memory::desc loss_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::nc);
     dnnl::memory loss = dnnl::memory(loss_md, eng);
 
-    auto ip1_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, sub_vector_md,
-                                                sub_vector_md, NULL, loss_md);
+    std::cout << "The dimensions of loss_sub_md are: ";
+    print_vector(loss_sub_md.dims());
+    std::cout << "\n";
+    std::cout << "The dimensions of loss_md are: ";
+    print_vector(loss_md.dims());
+    std::cout << "\n";
+
+    auto ip1_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, loss_sub_md,
+                                                loss_sub_md, loss_md);
+
+    std::cout << "Inner product desc created" << "\n";
 
     // nullptr, since we have no attr (see oneDNN primitive_desc API reference)
     auto ip1_pd = dnnl::inner_product_forward::primitive_desc(
         ip1_desc, nullptr, eng);
 
+    std::cout << "Inner product primitive desc created" << "\n";
+
     net.push_back(dnnl::inner_product_forward(ip1_pd));
-    net_args.push_back({{DNNL_ARG_SRC, sub_vector_md},
-                        {DNNL_ARG_WEIGHTS, sub_vector_md},
+    net_args.push_back({{DNNL_ARG_SRC, loss_sub},
+                        {DNNL_ARG_WEIGHTS, loss_sub},
                         {DNNL_ARG_DST, loss}});
-    
+    */
     return net.size() - 1;
 
 }
 
-int L2_Loss_back(std::vector<dnnl::primitive> net_fwd, 
+// Net forward args is passed because a loss function contains more than one primitive
+int L2_Loss_back(std::vector<std::unordered_map<int, dnnl::memory>> &net_fwd_args, 
                  int finish,
                  std::vector<dnnl::primitive> &net,
                  std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
@@ -63,13 +89,14 @@ int L2_Loss_back(std::vector<dnnl::primitive> net_fwd,
     // we want to start from the first layer of the L2 loss when dealing with the offset
     int start = finish - L2_LOSS;
 
-    auto loss_sub = net_fwd[start + L2_SUB];
+    // Get destination of subtraction, ie. the y_hat - y we use before the inner product
+    auto loss_sub = net_fwd_args[start + L2_SUB][DNNL_ARG_DST];
     dnnl::memory::dims dim_nc = {loss_sub.get_desc().dims()[0], 1};
 
     // Multiply by 2 using eltwise_linear
 
     auto loss_diff_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
-    auto loss_diff = memory(loss_diff_md, eng);
+    auto loss_diff = dnnl::memory(loss_diff_md, eng);
 
     auto linear_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
                                                 loss_diff_md, 2.f, 0.f);
