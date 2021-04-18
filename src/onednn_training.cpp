@@ -144,19 +144,21 @@ void simple_net(engine::kind engine_kind)
 
         std::cout << "I created the second dense layer!\n";
 
-        // Cross entropy loss
+        // L2 loss
 
-        
-
+        int loss = L2_Loss(net_fwd_args[fc2][DNNL_ARG_DST], labels_memory, 
+                           net_fwd, net_fwd_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Backward Stream -------------------------------------
         // ... user diff_data in float data type ...
 
+        std::cout << "Creating backward Loss" << "\n";
+        int loss_back = L2_Loss_back(net_fwd, loss, net_bwd, net_bwd_args, eng);
         std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
-        int fc2_back = Dense_back(net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
+        int fc2_back = Dense_back(net_bwd[loss_back][DNNL_ARG_DST], net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
         std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
-        int fc1_back = Dense_back(net_fwd_args[fc1], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
+        int fc1_back = Dense_back(net_bwd[fc2_back][DNNL_DIFF_SRC], net_fwd_args[fc1], algorithm::eltwise_logistic, net_bwd, net_bwd_args, eng);
         std::cout << "Creating the second convolutional layer (back) using forward index: " << conv2 << "\n"; 
         int conv2_back = Conv2D_back(net_fwd_args[conv2], stride, padding, 1, algorithm::eltwise_relu, net_bwd, net_bwd_args, eng);
         std::cout << "Creating the first convolutional layer (back) using forward index: " << conv1 << "\n"; 
