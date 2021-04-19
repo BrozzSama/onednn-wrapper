@@ -37,6 +37,10 @@ int Conv2D(int batch_size, int patch_length,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
 {
+    // RNG for ALL purposes
+    std::default_random_engine generator;
+    std::normal_distribution<float> norm_dist(0.f,1.f);
+
     std::cout << "Creating convolutional layer!\n";
     // N channels = one since we have monochromatic images (WIP)
     //dnnl::memory::dims conv_src_tz = {batch_size, 1, patch_length, patch_length};
@@ -52,9 +56,22 @@ int Conv2D(int batch_size, int patch_length,
     std::vector<float> conv_weights(product(conv_weights_tz));
     std::vector<float> conv_bias(product(conv_bias_tz));
 
+    // Initialize weight and biases 
+    for (int i = 0; i<conv_weights.size(); i++){
+        conv_weights[i] = norm_dist(generator);
+    }
+
+    for (int i = 0; i<conv_bias.size(); i++){
+        conv_bias[i] = norm_dist(generator);
+    }
+
+
     // Write initialized weights and biases on selected engine
     auto conv_user_weights_memory = dnnl::memory({{conv_weights_tz}, dt::f32, tag::oihw}, eng);
     auto conv_user_bias_memory = dnnl::memory({{conv_bias_tz}, dt::f32, tag::x}, eng);
+
+    write_to_dnnl_memory(conv_weights.data(), conv_user_weights_memory);
+    write_to_dnnl_memory(conv_bias.data(), conv_user_bias_memory);
 
     // Create memory descriptor for input, weights, biases, destination
     auto conv_src_md = dnnl::memory::desc({conv_src_tz}, dt::f32, tag::any);
@@ -143,91 +160,6 @@ int Conv2D(int batch_size, int patch_length,
     return net.size() - 1;
 }
 
-int Conv2D_back(dnnl::memory diff_dst,
-           std::unordered_map<int, dnnl::memory> conv2d_fwd,
-           int stride_length, int padding_length,
-           int dilation,
-           dnnl::algorithm activation,
-           std::vector<dnnl::primitive> &net,
-           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
-           dnnl::engine eng)
-{
-
-    std::cout << "Allocating memory for backward convolution\n";
-    // Create memory area for backward pass (get types from conv2d_fwd)
-    auto conv_diff_weights_memory = dnnl::memory(conv2d_fwd[DNNL_ARG_WEIGHTS].get_desc(), eng);
-    auto conv_diff_bias_memory = dnnl::memory(conv2d_fwd[DNNL_ARG_BIAS].get_desc(), eng);
-
-    std::cout << "Obtaining memory descriptors for backward convolution\n";
-    // create memory descriptors for f32 convolution data
-    auto conv_bwd_src_md = conv2d_fwd[DNNL_ARG_SRC].get_desc();
-    auto conv_diff_weights_md = conv2d_fwd[DNNL_ARG_WEIGHTS].get_desc();
-    // Get dst descriptor to recreate forward primitive
-    auto conv_fwd_dst_md = conv2d_fwd[DNNL_ARG_DST].get_desc();
-
-    auto conv_diff_dst_md = diff_dst.get_desc();
-    auto conv_diff_bias_md = conv2d_fwd[DNNL_ARG_BIAS].get_desc();
-
-    std::cout << "SRC dims size: " << conv_bwd_src_md.dims().size() << "\n";
-    std::cout << "Source vector md content: " << "\n";
-    print_vector(conv_bwd_src_md.dims());
-    std::cout << "Weights dims size: " << conv_diff_weights_md.dims().size() << "\n";
-    std::cout << "Weights vector md content: " << "\n";
-    print_vector(conv_diff_weights_md.dims());
-    std::cout << "Dst dims size: " << conv_diff_dst_md.dims().size() << "\n";
-    std::cout << "Dst vector md content: " << "\n";
-    print_vector(conv_diff_dst_md.dims());
-    std::cout << "Bias dims size: " << conv_diff_bias_md.dims().size() << "\n";
-    std::cout << "Bias vector md content: " << "\n";
-    print_vector(conv_diff_bias_md.dims());
-
-    std::cout << "Setting dimensions\n";
-    dnnl::memory::dims conv_strides = {stride_length, stride_length};
-    dnnl::memory::dims conv_dilates = {dilation, dilation};
-    dnnl::memory::dims conv_padding = {padding_length, padding_length};
-
-    // Recreate forward descriptor since it is needed to create the backward primitive descriptor
-
-    std::cout << "Recreating Convolutional layer primitive descriptor\n";
-    auto conv_fwd_desc = dnnl::convolution_forward::desc(dnnl::prop_kind::forward,
-                                                       dnnl::algorithm::convolution_direct, conv_bwd_src_md, conv_diff_weights_md,
-                                                       conv_diff_bias_md, conv_fwd_dst_md, conv_strides, conv_dilates, conv_padding,
-                                                       conv_padding);
-    std::cout << "Settings post-ops\n";
-    dnnl::post_ops conv_fwd_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    conv_fwd_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr conv_fwd_attr;
-    conv_fwd_attr.set_post_ops(conv_fwd_ops);
-
-    std::cout << "Creating Convolutional layer primitive descriptor\n";
-    auto conv_fwd_pd = dnnl::convolution_forward::primitive_desc(conv_fwd_desc, conv_fwd_attr, eng);
-
-    auto conv_bwd_src_memory = dnnl::memory(conv_bwd_src_md, eng);
-
-    std::cout << "Creating backwrard Convolutional layer primitive descriptor\n";
-    auto conv_bwd_desc = dnnl::convolution_backward_weights::desc(dnnl::algorithm::convolution_direct,
-                                                            conv_bwd_src_md, conv_diff_weights_md, conv_diff_bias_md,
-                                                            conv_diff_dst_md, conv_strides, conv_dilates, conv_padding, conv_padding);
-    
-    auto conv_bwd_pd = dnnl::convolution_backward_weights::primitive_desc(conv_bwd_desc, eng, conv_fwd_pd);
-
-    conv_bwd_src_memory = checkType(conv_bwd_pd.src_desc(), conv2d_fwd[DNNL_ARG_SRC], net, net_args, eng);
-    auto conv_diff_dst_memory = checkType(conv_bwd_pd.diff_dst_desc(), diff_dst, net, net_args, eng);
-    net.push_back(dnnl::convolution_backward_weights(conv_bwd_pd));
-    net_args.push_back({{DNNL_ARG_SRC, conv_bwd_src_memory},
-                        {DNNL_ARG_DIFF_DST, conv_diff_dst_memory},
-                        // If something does not work check this, there might be some
-                        // reordering needed done in a similar fashion to cnn_training_f32.cpp
-                        {DNNL_ARG_DIFF_WEIGHTS, conv_diff_weights_memory},
-                        {DNNL_ARG_DIFF_BIAS, conv_diff_bias_memory}});
-    
-    // Return index to locate the layer
-    return net.size() - 1;
-}
-
 int Dense(dnnl::memory::dims src_dims, 
           int fc_output_size,
           dnnl::algorithm activation,
@@ -236,6 +168,10 @@ int Dense(dnnl::memory::dims src_dims,
           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
           dnnl::engine eng)
 {
+
+    // RNG for ALL purposes
+    std::default_random_engine generator;
+    std::normal_distribution<float> norm_dist(0.f,1.f);
 
     // 0,1,2,3 are used to grab the dimension we need from the source dims vector
     dnnl::memory::dims weights_dims_fc;
@@ -278,6 +214,14 @@ int Dense(dnnl::memory::dims src_dims,
     std::vector<float> fc_weights(product(weights_dims_fc));
     std::vector<float> fc_bias(product(bias_dims_fc));
 
+    for (int i = 0; i<fc_weights.size(); i++){
+        fc_weights[i] = norm_dist(generator);
+    }
+
+    for (int i = 0; i<fc_bias.size(); i++){
+        fc_bias[i] = norm_dist(generator);
+    }
+
     // If something does not work check here (oihw?)
     dnnl::memory weights_mem_fc;
     if ( from_conv ){
@@ -286,6 +230,9 @@ int Dense(dnnl::memory::dims src_dims,
     else {
         weights_mem_fc = dnnl::memory({weights_dims_fc, dt::f32, tag::oi}, eng);
     }
+
+    write_to_dnnl_memory(fc_bias.data(), bias_mem_fc);
+    write_to_dnnl_memory(fc_weights.data(), weights_mem_fc);
 
     auto weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::any);
 
