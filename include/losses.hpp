@@ -36,6 +36,14 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
 
     std::cout << "Created sum primitive" << "\n"; 
 
+    std::vector<float> init_values(product(dim_nc));
+
+    for (int i = 0; i<init_values.size(); i++){
+        init_values[i] = 65.f;
+    }
+
+    write_to_dnnl_memory((void*) init_values.data(), loss_sub);
+
     net.push_back(dnnl::sum(loss_sub_pd));
 
     std::unordered_map<int, dnnl::memory> sum_args;
@@ -98,6 +106,14 @@ int L2_Loss_back(std::vector<std::unordered_map<int, dnnl::memory>> &net_fwd_arg
 
     auto loss_diff_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
     auto loss_diff = dnnl::memory(loss_diff_md, eng);
+
+    std::vector<float> init_values(product(dim_nc));
+
+    for (int i = 0; i<init_values.size(); i++){
+        init_values[i] = 65.f;
+    }
+
+    write_to_dnnl_memory((void*) init_values.data(), loss_diff);
 
     auto linear_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
                                                 loss_diff_md, 2.f, 0.f);

@@ -29,7 +29,6 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
-           dnnl::algorithm activation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
@@ -76,16 +75,9 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
                                                        conv_diff_bias_md, conv_fwd_dst_md, conv_strides, conv_dilates, conv_padding,
                                                        conv_padding);
     std::cout << "Settings post-ops\n";
-    dnnl::post_ops conv_fwd_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    conv_fwd_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr conv_fwd_attr;
-    conv_fwd_attr.set_post_ops(conv_fwd_ops);
 
-    std::cout << "Creating Convolutional layer primitive descriptor\n";
-    auto conv_fwd_pd = dnnl::convolution_forward::primitive_desc(conv_fwd_desc, conv_fwd_attr, eng);
+    auto conv_fwd_pd = dnnl::convolution_forward::primitive_desc(conv_fwd_desc, eng);
+
 
     auto conv_bwd_src_memory = dnnl::memory(conv_bwd_src_md, eng);
 
@@ -112,7 +104,6 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
 
 int Dense_back_weights(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> dense_fwd,
-           dnnl::algorithm activation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
@@ -137,18 +128,9 @@ int Dense_back_weights(dnnl::memory diff_dst,
     auto fc_fwd_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, fc_bwd_src_md,
                                                 fc_diff_weights_md, fc_diff_bias_md, fc_fwd_dst_md);
     
-    dnnl::post_ops fc_fwd_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    fc_fwd_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr fc_fwd_attr;
-    fc_fwd_attr.set_post_ops(fc_fwd_ops);
-
-    auto fc_fwd_pd = dnnl::inner_product_forward::primitive_desc(
-        fc_fwd_desc, fc_fwd_attr, eng);
-
     std::cout << "Creating inner product weights gradient primitive\n";
+
+    auto fc_fwd_pd = dnnl::inner_product_forward::primitive_desc(fc_fwd_desc, eng);
 
     auto fc_bwd_desc = dnnl::inner_product_backward_weights::desc(fc_bwd_src_md, fc_diff_weights_md, fc_diff_bias_md,
                                                             fc_diff_dst_md);

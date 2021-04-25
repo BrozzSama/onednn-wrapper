@@ -25,13 +25,11 @@
 using tag = dnnl::memory::format_tag;
 using dt = dnnl::memory::data_type;
 
-
 // Conv2D, only Glorot initializer implemented
 int Conv2D(int batch_size, int patch_length,
            int n_kernels, int kernel_size,
            int stride_length, int padding_length,
            int dilation,
-           dnnl::algorithm activation,
            dnnl::memory input,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
@@ -123,17 +121,9 @@ int Conv2D(int batch_size, int patch_length,
         throw;
     }
 
-    dnnl::post_ops conv_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    conv_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr conv_attr;
-    conv_attr.set_post_ops(conv_ops);
-
+    
     std::cout << "Creating primitive descriptor for convolution\n";
-
-    auto conv_pd = dnnl::convolution_forward::primitive_desc(conv_desc, conv_attr, eng);
+    auto conv_pd = dnnl::convolution_forward::primitive_desc(conv_desc, eng);
 
     // Check if the types are proper
     std::cout << "Testing types\n";
@@ -162,7 +152,6 @@ int Conv2D(int batch_size, int patch_length,
 
 int Dense(dnnl::memory::dims src_dims, 
           int fc_output_size,
-          dnnl::algorithm activation,
           dnnl::memory input,
           std::vector<dnnl::primitive> &net,
           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
@@ -238,18 +227,9 @@ int Dense(dnnl::memory::dims src_dims,
 
     auto fc_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, src_md_fc,
                                                 weights_md_fc, bias_md_fc, dst_md_fc);
+
+    auto fc_pd = dnnl::inner_product_forward::primitive_desc(fc_desc, eng);
     
-    dnnl::post_ops fc_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    fc_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr fc_attr;
-    fc_attr.set_post_ops(fc_ops);
-
-    auto fc_pd = dnnl::inner_product_forward::primitive_desc(
-        fc_desc, fc_attr, eng);
-
     // Check if the types are proper
     src_mem_fc = checkType(fc_pd.src_desc(), input, net, net_args, eng);
     weights_mem_fc = checkType(fc_pd.weights_desc(), weights_mem_fc, net, net_args, eng);
@@ -265,6 +245,41 @@ int Dense(dnnl::memory::dims src_dims,
                         {DNNL_ARG_BIAS, bias_mem_fc},
                         {DNNL_ARG_DST, dst_mem_fc}});
     // Return index to locate the layer
+    return net.size() - 1;
+}
+
+int Eltwise(dnnl::algorithm activation,
+          float alpha,
+          float beta,
+          dnnl::memory input,
+          std::vector<dnnl::primitive> &net,
+          std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+          dnnl::engine eng)
+{
+
+    auto src_md = input.get_desc();
+
+    /*dnnl::memory::dims ciao(src_md.dims().size());
+
+    for (int i = 0; i<ciao.size(); i++){
+        ciao[i] = src_md.dims()[i];
+    }*/
+
+    //auto dst_md = dnnl::memory::desc(ciao, dt::f32, tag::any);
+
+    auto dst_mem = dnnl::memory(src_md, eng);
+    auto dst_md =  dst_mem.get_desc();
+
+    std::cout << "Memory allocated\n";
+
+    auto eltwise_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, activation,
+                                                dst_md, alpha, beta);
+    auto eltwise_pd = dnnl::eltwise_forward::primitive_desc(eltwise_desc, eng);
+
+    net.push_back(dnnl::eltwise_forward(eltwise_pd));
+    net_args.push_back({{DNNL_ARG_SRC, input},
+                        {DNNL_ARG_DST, dst_mem}});
+
     return net.size() - 1;
 }
 

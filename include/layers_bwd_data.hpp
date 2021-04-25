@@ -25,7 +25,6 @@ int Conv2D_back_data(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
-           dnnl::algorithm activation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
@@ -74,16 +73,10 @@ int Conv2D_back_data(dnnl::memory diff_dst,
                                                        conv_bias_md, conv_fwd_dst_md, conv_strides, conv_dilates, conv_padding,
                                                        conv_padding);
     std::cout << "Settings post-ops\n";
-    dnnl::post_ops conv_fwd_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    conv_fwd_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr conv_fwd_attr;
-    conv_fwd_attr.set_post_ops(conv_fwd_ops);
 
     std::cout << "Creating Convolutional layer primitive descriptor\n";
-    auto conv_fwd_pd = dnnl::convolution_forward::primitive_desc(conv_fwd_desc, conv_fwd_attr, eng);
+
+    auto conv_fwd_pd = dnnl::convolution_forward::primitive_desc(conv_fwd_desc, eng);
 
     auto conv_diff_src_md = conv2d_fwd[DNNL_ARG_SRC].get_desc();
     //auto conv_bwd_src_memory = dnnl::memory(conv_bwd_src_md, eng);
@@ -112,7 +105,6 @@ int Conv2D_back_data(dnnl::memory diff_dst,
 
 int Dense_back_data(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> dense_fwd,
-           dnnl::algorithm activation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng){
@@ -129,29 +121,20 @@ int Dense_back_data(dnnl::memory diff_dst,
     // This is only used to recreate fwd primitive
     auto fc_fwd_dst_md = dense_fwd[DNNL_ARG_DST].get_desc();
     auto fc_diff_dst_md = diff_dst.get_desc();
-    auto fc_diff_bias_md = dense_fwd[DNNL_ARG_BIAS].get_desc();
-    auto fc_src_md = fc_diff_src_memory.get_desc();
+    auto fc_bias_md = dense_fwd[DNNL_ARG_BIAS].get_desc();
+    auto fc_diff_src_md = fc_diff_src_memory.get_desc();
 
     // Recreate forward descriptor (see conv2dback)
 
-    auto fc_fwd_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, fc_src_md,
-                                                fc_weights_md, fc_diff_bias_md, fc_fwd_dst_md);
-    
-    dnnl::post_ops fc_fwd_ops;
-    const float scale = 1.0f;
-    const float alpha = 0.f;
-    const float beta = 0.f;
-    fc_fwd_ops.append_eltwise(scale, activation, alpha, beta);
-    dnnl::primitive_attr fc_fwd_attr;
-    fc_fwd_attr.set_post_ops(fc_fwd_ops);
+    auto fc_fwd_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, fc_diff_src_md,
+                                                fc_weights_md, fc_bias_md, fc_fwd_dst_md);
 
-    auto fc_fwd_pd = dnnl::inner_product_forward::primitive_desc(
-        fc_fwd_desc, fc_fwd_attr, eng);
+    auto fc_fwd_pd = dnnl::inner_product_forward::primitive_desc(fc_fwd_desc, eng);
 
     std::cout << "Creating inner product data gradient primitive\n";
 
-    auto fc_bwd_desc = dnnl::inner_product_backward_data::desc(fc_src_md, fc_weights_md, 
-                                                            fc_fwd_dst_md);
+    auto fc_bwd_desc = dnnl::inner_product_backward_data::desc(fc_diff_src_md, fc_weights_md, 
+                                                            fc_diff_dst_md);
 
     std::cout << "Created inner product data gradient primitive\n";
     
@@ -175,4 +158,47 @@ int Dense_back_data(dnnl::memory diff_dst,
     // Return index to locate the layer
     return net.size() - 1;
 
+}
+
+// Only because eltwise has no weights!!!
+int Eltwise_back(dnnl::algorithm activation,
+          float alpha,
+          float beta,
+          std::unordered_map<int, dnnl::memory> eltwise_fwd, 
+          dnnl::memory diff_dst,
+          std::vector<dnnl::primitive> &net,
+          std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+          dnnl::engine eng)
+{
+
+    auto diff_dst_md = diff_dst.get_desc();
+    //auto diff_src_md = dnnl::memory::desc(diff_dst_md.dims(), dt::f32, tag::any);
+
+    auto diff_src_md = diff_dst_md;
+
+    auto diff_src_mem = dnnl::memory(diff_src_md, eng);
+
+    auto src_mem = eltwise_fwd[DNNL_ARG_SRC];
+    auto src_md = src_mem.get_desc();
+
+    // Recreate forward descriptor for hint
+    auto eltwise_fwd_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, activation,
+                                                eltwise_fwd[DNNL_ARG_DST].get_desc(), alpha, beta);
+    auto eltwise_fwd_pd = dnnl::eltwise_forward::primitive_desc(eltwise_fwd_desc, eng);
+
+    // We use diff_dst_md as diff_data_md because it is an input and the cnn_trainin_f32.cpp examples
+    // does the same thing, however there is no clear explanation in the documentation...
+    // https://oneapi-src.github.io/oneDNN/structdnnl_1_1eltwise__backward_1_1desc.html
+
+    auto eltwise_bwd_desc = dnnl::eltwise_backward::desc(activation, diff_dst_md, src_md, 
+                                                alpha, beta);
+                                        
+    auto eltwise_bwd_pd = dnnl::eltwise_backward::primitive_desc(eltwise_bwd_desc, eng, eltwise_fwd_pd);
+
+    net.push_back(dnnl::eltwise_backward(eltwise_bwd_pd));
+    net_args.push_back({{DNNL_ARG_DIFF_DST, diff_dst},
+                        {DNNL_ARG_SRC, src_mem},
+                        {DNNL_ARG_DIFF_SRC, diff_src_mem}});
+
+    return net.size() - 1;
 }

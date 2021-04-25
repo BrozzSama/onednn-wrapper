@@ -91,7 +91,7 @@ void simple_net(engine::kind engine_kind)
         const int stride = 1;
         const int kernel_size = 3;
         const int n_kernels = 64;
-        const float learning_rate = 0.01;
+        const float learning_rate = 0.0001;
         // Compute the padding to preserve the same dimension in input and output
         // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
         // padding /= 2;
@@ -101,9 +101,20 @@ void simple_net(engine::kind engine_kind)
         // Load inputs inside engine
         memory::dims input_dim = {batch, 1, patch_size, patch_size};
         auto input_memory = memory({{input_dim}, dt::f32, tag::nchw}, eng);
+        for (int i = 0; i<dataset.size(); i++){
+                if(std::isnan(dataset[i])){
+                        std::cout << "Found NAN!!!!!\n";
+                }
+        }
         write_to_dnnl_memory(dataset.data(), input_memory);
 
         std::cout << "I wrote the input data!\n";
+
+        for (int i = 0; i<dataset_labels.size(); i++){
+                if(std::isnan(dataset_labels[i])){
+                        std::cout << "Found NAN in labels!!!!!\n";
+                }
+        }
 
         memory::dims labels_dim = {batch, 1};
         auto labels_memory = memory({{labels_dim}, dt::f32, tag::nc}, eng);
@@ -118,16 +129,22 @@ void simple_net(engine::kind engine_kind)
         // strides: {4, 4}
 
         int conv1 = Conv2D(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, 
-               algorithm::eltwise_relu, input_memory, net_fwd, net_fwd_args, eng);
+               input_memory, net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the first convolutional layer: " << net_fwd_args.size() << "!\n";
+
+        int relu1 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[conv1][DNNL_ARG_DST],
+                            net_fwd, net_fwd_args, eng);
 
         // pnetcls: conv
         // {batch, 1, 32, 32} (x) {64, 1, 3, 3} -> {batch, 96, 55, 55}
         // strides: {4, 4}
 
         int conv2 = Conv2D(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, 
-               algorithm::eltwise_relu, net_fwd_args[conv1][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+               net_fwd_args[relu1][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+
+        int relu2 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[conv2][DNNL_ARG_DST],
+                            net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the second convolutional layer!\n";
 
@@ -136,8 +153,11 @@ void simple_net(engine::kind engine_kind)
 
         memory::dims fc1_src_dims = {batch, n_kernels, patch_size, patch_size};
         int fc1_output_size = 128;
-        int fc1 = Dense(fc1_src_dims, fc1_output_size, algorithm::eltwise_relu, 
-                             net_fwd_args[conv2][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+        int fc1 = Dense(fc1_src_dims, fc1_output_size, 
+                        net_fwd_args[relu2][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+
+        int relu3 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[fc1][DNNL_ARG_DST],
+                            net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the first dense layer!\n";
 
@@ -146,40 +166,51 @@ void simple_net(engine::kind engine_kind)
 
         memory::dims fc2_src_dims = {batch, fc1_output_size};
         int fc2_output_size = 1;
-        int fc2 = Dense(fc2_src_dims, fc2_output_size, algorithm::eltwise_logistic, 
-                             net_fwd_args[fc1][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+        int fc2 = Dense(fc2_src_dims, fc2_output_size, 
+                        net_fwd_args[relu3][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+                        
+        int sigmoid1 = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[fc2][DNNL_ARG_DST],
+                            net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the second dense layer!\n";
 
         // L2 loss
 
-        int loss = L2_Loss(net_fwd_args[fc2][DNNL_ARG_DST], labels_memory, 
+        int loss = L2_Loss(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, 
                           net_fwd, net_fwd_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Data)-------------------------------------
 
         std::cout << "Creating backward Loss" << "\n";
-        int loss_back = L2_Loss_back(net_fwd_args, net_fwd_args[fc2][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
+        int loss_back = L2_Loss_back(net_fwd_args, net_fwd_args[loss][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
-        int fc2_back_data = Dense_back_data(net_bwd_data_args[loss_back][DNNL_ARG_DST], net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd_data, net_bwd_data_args, eng);
+        int sigmoid1_back = Eltwise_back(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[sigmoid1], 
+                                         net_bwd_data_args[loss_back][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
+        int fc2_back_data = Dense_back_data(net_bwd_data_args[sigmoid1_back][DNNL_ARG_DIFF_SRC], net_fwd_args[fc2], net_bwd_data, net_bwd_data_args, eng);
+        int relu3_back_data = Eltwise_back(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[relu3], 
+                                         net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_SRC], net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
-        int fc1_back_data = Dense_back_data(net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], algorithm::eltwise_logistic, net_bwd_data, net_bwd_data_args, eng);
+        int fc1_back_data = Dense_back_data(net_bwd_data_args[relu3_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], net_bwd_data, net_bwd_data_args, eng);
+        int relu2_back_data = Eltwise_back(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[relu2], 
+                                         net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_SRC], net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the second convolutional layer (back) using forward index: " << conv2 << "\n"; 
-        int conv2_back_data = Conv2D_back_data(net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[conv2], stride, padding, 1, algorithm::eltwise_relu, net_bwd_data, net_bwd_data_args, eng);
+        int conv2_back_data = Conv2D_back_data(net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[conv2], stride, padding, 1, net_bwd_data, net_bwd_data_args, eng);
+        int relu1_back_data = Eltwise_back(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[relu1], 
+                                         net_bwd_data_args[conv2_back_data][DNNL_ARG_DIFF_SRC], net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the first convolutional layer (back) using forward index: " << conv1 << "\n"; 
-        int conv1_back_data = Conv2D_back_data(net_bwd_data_args[conv2_back_data][DNNL_ARG_DIFF_SRC] , net_fwd_args[conv1], stride, padding, 1, algorithm::eltwise_relu, net_bwd_data, net_bwd_data_args, eng);
+        int conv1_back_data = Conv2D_back_data(net_bwd_data_args[relu1_back_data][DNNL_ARG_DIFF_SRC] , net_fwd_args[conv1], stride, padding, 1, net_bwd_data, net_bwd_data_args, eng);
         
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Weights)-------------------------------------
         std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
-        int fc2_back_weights = Dense_back_weights(net_bwd_data_args[loss_back][DNNL_ARG_DST], net_fwd_args[fc2], algorithm::eltwise_logistic, net_bwd_weights, net_bwd_weights_args, eng);
+        int fc2_back_weights = Dense_back_weights(net_bwd_data_args[loss_back][DNNL_ARG_DST], net_fwd_args[fc2], net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
-        int fc1_back_weights = Dense_back_weights(net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], algorithm::eltwise_logistic, net_bwd_weights, net_bwd_weights_args, eng);
+        int fc1_back_weights = Dense_back_weights(net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Creating the second convolutional layer (back) using forward index: " << conv2 << "\n"; 
-        int conv2_back_weights = Conv2D_back_weights(net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[conv2], stride, padding, 1, algorithm::eltwise_relu, net_bwd_weights, net_bwd_weights_args, eng);
+        int conv2_back_weights = Conv2D_back_weights(net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[conv2], stride, padding, 1, net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Creating the first convolutional layer (back) using forward index: " << conv1 << "\n"; 
-        int conv1_back_weights = Conv2D_back_weights(net_bwd_data_args[conv2_back_data][DNNL_ARG_DIFF_SRC] , net_fwd_args[conv1], stride, padding, 1, algorithm::eltwise_relu, net_bwd_weights, net_bwd_weights_args, eng);
+        int conv1_back_weights = Conv2D_back_weights(net_bwd_data_args[conv2_back_data][DNNL_ARG_DIFF_SRC] , net_fwd_args[conv1], stride, padding, 1, net_bwd_weights, net_bwd_weights_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Weights update -------------------------------------
@@ -213,9 +244,21 @@ void simple_net(engine::kind engine_kind)
                 weight_test[i] = 65;
         }
 
+        std::vector<float> diff_src_test(128), diff_dst_test(128);
+
+        for (int i = 0; i<weight_test.size(); i++){
+                diff_src_test[i] = 65;
+                diff_dst_test[i] = 65;
+        }
+
         unsigned long batch_size = batch;
 
         const unsigned long loss_dim [] = {batch_size};
+
+        read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+        s.wait();
+        print_vector2(curr_loss);
+
 
         // execute
         while (n_iter)
@@ -250,9 +293,14 @@ void simple_net(engine::kind engine_kind)
                 if (n_iter % 1 == 0){  
                         s.wait();
                         read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(weight_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
+                        s.wait();
+                        read_from_dnnl_memory(diff_src_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
+                        s.wait();
+                        read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_DST]);
+                        s.wait();
                         print_vector2(curr_loss);
-                        print_vector2(weight_test);
+                        print_vector2(diff_src_test);
+                        print_vector2(diff_dst_test);
                         
                         //std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
                         //npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
