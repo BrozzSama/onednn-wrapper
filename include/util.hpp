@@ -30,7 +30,14 @@ void print_vector(std::vector<dnnl::memory::dim> const &input)
 
 void print_vector2(std::vector<float> input)
 {
-    for (int i = 0; i < 50; i++) {
+    int limit;
+    if (input.size() > 50){
+        limit = 50;
+    }
+    else{
+        limit = input.size();
+    }
+    for (int i = 0; i < limit; i++) {
         std::cout << input.at(i) << ' ';
     }
     std::cout << "\n";

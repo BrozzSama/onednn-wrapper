@@ -136,7 +136,7 @@ void simple_net(engine::kind engine_kind)
         int fc1 = Dense(fc1_src_dims, fc1_output_size, 
                         input_memory, net_fwd, net_fwd_args, eng);
 
-        int relu1 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[fc1][DNNL_ARG_DST],
+        int relu1 = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[fc1][DNNL_ARG_DST],
                             net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the first dense layer!\n";
@@ -168,7 +168,7 @@ void simple_net(engine::kind engine_kind)
         int sigmoid1_back = Eltwise_back(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[sigmoid1], 
                                          net_bwd_data_args[loss_back][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
         int fc2_back_data = Dense_back_data(net_bwd_data_args[sigmoid1_back][DNNL_ARG_DIFF_SRC], net_fwd_args[fc2], net_bwd_data, net_bwd_data_args, eng);
-        int relu1_back_data = Eltwise_back(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[relu1], 
+        int relu1_back_data = Eltwise_back(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[relu1], 
                                          net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_SRC], net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
         int fc1_back_data = Dense_back_data(net_bwd_data_args[relu1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], net_bwd_data, net_bwd_data_args, eng);
@@ -194,15 +194,14 @@ void simple_net(engine::kind engine_kind)
         assert(net_bwd_data.size() == net_bwd_data_args.size() && "something is missing");
         assert(net_bwd_weights.size() == net_bwd_weights_args.size() && "something is missing");
 
-        int n_iter = 10; // number of iterations for training
+        int n_iter = 100; // number of iterations for training
 
         // Prepare memory that will host loss
         std::vector<float> curr_loss(batch);
 
         std::vector<float> weight_test(128);
 
-        std::vector<float> diff_src_test(128), diff_dst_test(batch*fc1_output_size);
-
+        std::vector<float> diff_weights_fc1_test(n_features * fc1_output_size), diff_dst_test(batch*fc1_output_size);
 
         unsigned long batch_size = batch;
 
@@ -245,16 +244,16 @@ void simple_net(engine::kind engine_kind)
                 if (n_iter % 1 == 0){  
                         read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
                         //s.wait();
-                        //read_from_dnnl_memory(diff_src_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
+                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
                         //s.wait();
                         read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_DST]);
                         s.wait();
                         print_vector2(curr_loss);
-                        //print_vector2(diff_src_test);
+                        print_vector2(diff_weights_fc1_test);
                         print_vector2(diff_dst_test);
                         
-                        //std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
-                        //npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
+                        std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
+                        npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
                 }
 
                 --n_iter;

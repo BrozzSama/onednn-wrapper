@@ -142,7 +142,7 @@ int Dense_back_weights(dnnl::memory diff_dst,
     std::cout << "Allocating source memory\n";
     auto fc_bwd_src_memory = dnnl::memory(fc_bwd_src_md, eng);
     std::cout << "Checking memory type src \n";
-    fc_bwd_src_memory = checkType(fc_bwd_pd.src_desc(), fc_bwd_src_memory, net, net_args, eng);
+    fc_bwd_src_memory = checkType(fc_bwd_pd.src_desc(), dense_fwd[DNNL_ARG_SRC], net, net_args, eng);
     std::cout << "Checking memory type dst\n";
     std::cout << "The size of net_back is: " << net_args.size() << "\n";
 
@@ -150,6 +150,11 @@ int Dense_back_weights(dnnl::memory diff_dst,
     auto fc_diff_dst_memory = checkType(fc_bwd_pd.diff_dst_desc(), diff_dst, net, net_args, eng);
         
     std::cout << "Adding backward\n";
+
+    if(fc_diff_weights_memory.get_desc() != fc_bwd_pd.diff_weights_desc()){
+        std::cout << "Formats are different\n";
+    }
+
     net.push_back(dnnl::inner_product_backward_weights(fc_bwd_pd));
     net_args.push_back({{DNNL_ARG_SRC, fc_bwd_src_memory},
                         {DNNL_ARG_DIFF_DST, fc_diff_dst_memory},
