@@ -155,6 +155,7 @@ int Dense_back_weights(dnnl::memory diff_dst,
         std::cout << "Formats are different\n";
     }
 
+    std::cout << "Adding to net\n";
     net.push_back(dnnl::inner_product_backward_weights(fc_bwd_pd));
     net_args.push_back({{DNNL_ARG_SRC, fc_bwd_src_memory},
                         {DNNL_ARG_DIFF_DST, fc_diff_dst_memory},

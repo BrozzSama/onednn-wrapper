@@ -214,13 +214,17 @@ void simple_net(engine::kind engine_kind)
 
         //-----------------------------------------------------------------------
         //----------------- Weights update -------------------------------------
-        updateWeights_SGD(net_fwd_args[conv1], net_bwd_weights_args[conv1_back_weights], 
+        updateWeights_SGD(net_fwd_args[conv1][DNNL_ARG_WEIGHTS], 
+                   net_bwd_weights_args[conv1_back_weights][DNNL_ARG_DIFF_WEIGHTS], 
                    learning_rate, net_sgd, net_sgd_args, eng);
-        updateWeights_SGD(net_fwd_args[conv2], net_bwd_weights_args[conv2_back_weights], 
+        updateWeights_SGD(net_fwd_args[conv2][DNNL_ARG_WEIGHTS], 
+                   net_bwd_weights_args[conv2_back_weights][DNNL_ARG_DIFF_WEIGHTS], 
                    learning_rate, net_sgd, net_sgd_args, eng);
-        updateWeights_SGD(net_fwd_args[fc1], net_bwd_weights_args[fc1_back_weights], 
+        updateWeights_SGD(net_fwd_args[fc1][DNNL_ARG_WEIGHTS], 
+                   net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_WEIGHTS], 
                    learning_rate, net_sgd, net_sgd_args, eng);
-        updateWeights_SGD(net_fwd_args[fc2], net_bwd_weights_args[fc2_back_weights], 
+        updateWeights_SGD(net_fwd_args[fc2][DNNL_ARG_WEIGHTS], 
+                   net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS], 
                    learning_rate, net_sgd, net_sgd_args, eng);
  
 

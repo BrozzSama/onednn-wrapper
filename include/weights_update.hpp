@@ -5,8 +5,8 @@
 #include <cmath>
 #include <random>
 
-void updateWeights_SGD(std::unordered_map<int, dnnl::memory> net_fwd_args, 
-                   std::unordered_map<int, dnnl::memory> net_bwd_weights_args,
+void updateWeights_SGD(dnnl::memory weights, 
+                   dnnl::memory diff_weights,
                    float learning_rate,
                    std::vector<dnnl::primitive> &net,
                    std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
@@ -14,9 +14,9 @@ void updateWeights_SGD(std::unordered_map<int, dnnl::memory> net_fwd_args,
 {
 
     // Create scale for subtraction
-    std::vector<float> scales = {1.f, -learning_rate};
+    std::vector<float> scales = {1.f, learning_rate * (-1.f)};
 
-    std::vector<dnnl::memory> sub_vector = {net_fwd_args[DNNL_ARG_WEIGHTS], net_bwd_weights_args[DNNL_ARG_DIFF_WEIGHTS]};
+    std::vector<dnnl::memory> sub_vector = {weights, diff_weights};
     std::vector<dnnl::memory::desc> sub_vector_md = {sub_vector[0].get_desc(), sub_vector[1].get_desc()};
     
     std::cout << "The dimensions of weights are: ";

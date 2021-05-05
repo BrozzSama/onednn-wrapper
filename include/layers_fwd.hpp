@@ -203,8 +203,11 @@ int Dense(dnnl::memory::dims src_dims,
     std::vector<float> fc_weights(product(weights_dims_fc));
     std::vector<float> fc_bias(product(bias_dims_fc));
 
+
+    std::cout << "Initializing weights: \n";
     for (int i = 0; i<fc_weights.size(); i++){
         fc_weights[i] = norm_dist(generator);
+        std::cout << fc_weights[i] << "\n";
     }
 
     for (int i = 0; i<fc_bias.size(); i++){
