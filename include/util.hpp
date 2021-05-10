@@ -32,9 +32,9 @@ void print_vector(std::vector<dnnl::memory::dim> const &input)
 void print_vector2(std::vector<float> input)
 {
     int limit;
-    if (input.size() > 50)
+    if (input.size() > 100)
     {
-        limit = 50;
+        limit = 100;
     }
     else
     {

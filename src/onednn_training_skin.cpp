@@ -52,9 +52,10 @@ void simple_net(engine::kind engine_kind)
         // RNG for ALL purposes
         std::default_random_engine generator;
 
+        unsigned long samples = 6;
         // Load dataset
         auto dataset_path = "data/features_admission.txt";
-        std::vector<unsigned long> dataset_shape = {400, 7};
+        std::vector<unsigned long> dataset_shape = {samples, 7};
         bool fortran_order;
         std::vector<float> dataset(dataset_shape[0]*dataset_shape[1]);
 
@@ -78,7 +79,7 @@ void simple_net(engine::kind engine_kind)
         //std::vector<unsigned long> shape_labels = {245057};
         //std::vector<float> dataset_labels(shape_labels[0]);
 
-        int samples = 400;
+        
         std::vector<float> dataset_labels(dataset_shape[0]);
 
         dataset_labels.clear();
@@ -106,6 +107,7 @@ void simple_net(engine::kind engine_kind)
         const int kernel_size = 3;
         const int n_kernels = 64;
         const float learning_rate = 0.001;
+
         // Compute the padding to preserve the same dimension in input and output
         // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
         // padding /= 2;
@@ -237,7 +239,7 @@ void simple_net(engine::kind engine_kind)
         assert(net_bwd_data.size() == net_bwd_data_args.size() && "something is missing");
         assert(net_bwd_weights.size() == net_bwd_weights_args.size() && "something is missing");
 
-        int max_iter = 1001; // number of iterations for training
+        int max_iter = 30; // number of iterations for training
         int n_iter = 0;
 
         // Prepare memory that will host loss
@@ -246,6 +248,10 @@ void simple_net(engine::kind engine_kind)
         std::vector<float> weight_test(128);
 
         std::vector<float> weights_fc1_test(n_features * fc1_output_size), diff_weights_fc1_test(n_features * fc1_output_size), diff_dst_test(batch*fc1_output_size);
+
+        std::vector<float> weights_fc2_test(fc1_output_size), diff_weights_fc2_test(fc1_output_size);
+
+        std::vector<float> bias_fc1_test(fc1_output_size), bias_fc2_test(fc2_output_size);
 
         std::vector<float> src_test(batch * n_features), dst_test(batch * fc1_output_size);
 
@@ -289,13 +295,15 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_sgd.size(); ++i)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
-                if (n_iter % 10 == 0){  
+                if (n_iter % 1 == 0){  
+                        s.wait();
                         read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
-                        //s.wait();
-                        read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
-                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST]);
-                        
-                        //s.wait();
+                        read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
+                        read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
+                        read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
+                        read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
+                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST]);
                         read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
                         
                         read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
@@ -303,11 +311,22 @@ void simple_net(engine::kind engine_kind)
 
                         read_from_dnnl_memory(src_test2.data(), net_fwd_args[fc2][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
-
                         s.wait();
+
+                        std::cout << "Gradient of Loss:\n";
                         print_vector2(curr_loss);
+                        std::cout << "FC1 Weights:\n";
                         print_vector2(weights_fc1_test);
+                        std::cout << "FC1 Bias:\n";
+                        print_vector2(bias_fc1_test);
+                        std::cout << "FC2 Weights:\n";
+                        print_vector2(weights_fc2_test);
+                        std::cout << "FC2 Bias:\n";
+                        print_vector2(bias_fc2_test);
+                        std::cout << "Gradient of FC1 weights:\n";
                         print_vector2(diff_weights_fc1_test);
+                        std::cout << "Gradient of FC2 weights:\n";
+                        print_vector2(diff_weights_fc2_test);
                         print_vector2(diff_dst_test);
                         std::cout << "FC1 SRC:\n";
                         print_vector2(src_test);
