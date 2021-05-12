@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <random>
+#include <time.h>
 
 // Macro definitions to recover L2 loss layer in backward
 
@@ -159,7 +160,7 @@ int Dense(dnnl::memory::dims src_dims,
 {
 
     // RNG for ALL purposes
-    std::default_random_engine generator;
+    std::default_random_engine generator(time(NULL));
     std::normal_distribution<float> norm_dist(0.f,1.f);
 
     // 0,1,2,3 are used to grab the dimension we need from the source dims vector
@@ -207,12 +208,16 @@ int Dense(dnnl::memory::dims src_dims,
     std::cout << "Initializing weights: \n";
     for (int i = 0; i<fc_weights.size(); i++){
         fc_weights[i] = norm_dist(generator);
-        std::cout << fc_weights[i] << "\n";
+        std::cout << fc_weights[i] << " ";
     }
-
+    std::cout << "\n";
+    
+    std::cout << "Initializing biases: \n";
     for (int i = 0; i<fc_bias.size(); i++){
         fc_bias[i] = norm_dist(generator);
+        std::cout << fc_bias[i] << " ";
     }
+    std::cout << "\n";
 
     // If something does not work check here (oihw?)
     dnnl::memory weights_mem_fc;
