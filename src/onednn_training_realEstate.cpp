@@ -170,7 +170,7 @@ void simple_net(engine::kind engine_kind)
         //----------------- Backpropagation Stream  (Data)-------------------------------------
 
         std::cout << "Creating backward Loss" << "\n";
-        int loss_back = L2_Loss_back(net_fwd_args, net_fwd_args[loss][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
+        int loss_back = L2_Loss_back(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating clip\n";
         int clip_loss_back = Clip(net_bwd_data_args[loss_back][DNNL_ARG_DST], clip_upper, clip_lower,
                                   net_bwd_data, net_bwd_data_args, eng);
@@ -236,30 +236,32 @@ void simple_net(engine::kind engine_kind)
         int step = 10;
 
         // Prepare memory that will host loss
-        std::vector<float> curr_loss(batch);
+        //std::vector<float> curr_loss(batch);
+        std::vector<float> curr_loss_diff(batch);
+        float curr_loss;
+        std::vector<float> loss_history((int)max_iter/step);
 
+        // Prepare memory that will host weights and biases
         std::vector<float> weight_test(128);
-
         std::vector<float> weights_fc1_test(n_features * fc1_output_size), diff_weights_fc1_test(n_features * fc1_output_size), diff_dst_test(batch*fc1_output_size);
-
         std::vector<float> weights_fc2_test(fc1_output_size), diff_weights_fc2_test(fc1_output_size);
-
         std::vector<float> bias_fc1_test(fc1_output_size), bias_fc2_test(fc2_output_size);
 
+        // Prepare memory that will host src
         std::vector<float> src_test(batch * n_features), dst_test(batch * fc1_output_size);
-
         std::vector<float> src_test2(batch * fc1_output_size), dst_test2(batch);
 
+        // Prepare memory that will host final output
         std::vector<float> sigmoid_test2(batch);
 
-        unsigned long batch_size = batch;
-
+        //unsigned long batch_size = batch;
+        unsigned long batch_size = max_iter/step;
         const unsigned long loss_dim [] = {batch_size};
 
-        read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+        //read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+        read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
         s.wait();
         //print_vector2(curr_loss);
-
 
         // execute
         while (n_iter < max_iter)
@@ -292,7 +294,10 @@ void simple_net(engine::kind engine_kind)
 
                 if (n_iter % step == 0){  
                         s.wait();
-                        read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+                        //read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[clip_loss_back][DNNL_ARG_DST]);
+
                         read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
@@ -310,8 +315,11 @@ void simple_net(engine::kind engine_kind)
                         read_from_dnnl_memory(sigmoid_test2.data(), net_fwd_args[sigmoid1][DNNL_ARG_DST]);
                         s.wait();
 
+                        //std::cout << "Gradient of Loss:\n";
+                        //print_vector2(curr_loss);
+                        std::cout << "Loss: " << curr_loss << "\n";
                         std::cout << "Gradient of Loss:\n";
-                        print_vector2(curr_loss);
+                        print_vector2(curr_loss_diff);
                         std::cout << "FC1 Weights:\n";
                         print_vector2(weights_fc1_test);
                         std::cout << "FC1 Bias:\n";
@@ -336,12 +344,17 @@ void simple_net(engine::kind engine_kind)
                         std::cout << "Sigmoid DST:\n";
                         print_vector2(sigmoid_test2);
                         
-                        std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
-                        npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
+                        //std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
+                        //npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
+                        loss_history[(int)n_iter/step] = curr_loss;
                 }
 
                 n_iter++;
         }
+
+        //std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
+        std::string loss_filename = "./data/losses/loss_history.npy";  
+        npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, loss_history);
 
         s.wait();
 }
