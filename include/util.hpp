@@ -54,13 +54,10 @@ void data_loader(std::string filename, std::vector<float> &data)
     if (myfile.is_open())
     {
         while (myfile >> data[i++]){}
-        
-        std::cout << "Read from file: " <<data[2] << "\n";
+
         myfile.close();
     }
 
     else
-        std::cout << "Unable to open file";
-
-    
+        std::cout << "Unable to open file";    
 }
