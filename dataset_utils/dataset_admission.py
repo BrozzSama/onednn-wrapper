@@ -17,11 +17,11 @@ label = df.iloc[:, -1].to_numpy(copy=True, dtype="float64").reshape([-1,1])
 
 shuffle_idx = np.random.permutation(range(features.shape[0]))
 
-features = features[shuffle_idx[0:6], :]
-label = label[shuffle_idx[0:6]]
+features = features[shuffle_idx, :]
+label = label[shuffle_idx]
 
 feature_file = open("data/features_admission.txt", "w")
-for row in features.T:
+for row in features:
     np.savetxt(feature_file, row, fmt="%f")
 
 feature_file.close()

@@ -5,7 +5,8 @@ import os
 
 data_path = "data/SkinSegmentation.txt"
 
-df = pd.read_csv(data_path, delimiter="\t")
+#df = pd.read_csv(data_path, delimiter="\t")
+df = pd.read_csv(data_path, delimiter=",")
 
 # NH format
 myScaler = MinMaxScaler()

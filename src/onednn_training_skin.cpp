@@ -52,35 +52,32 @@ void simple_net(engine::kind engine_kind)
         // RNG for ALL purposes
         std::default_random_engine generator;
 
-        unsigned long samples = 6;
+        // Admission dataset (regression)
+        //unsigned long samples = 400;
+        // Skin dataset (binary classification)
+        unsigned long samples = 245057;
         // Load dataset
-        auto dataset_path = "data/features_admission.txt";
-        std::vector<unsigned long> dataset_shape = {samples, 7};
-        bool fortran_order;
+        //auto dataset_path = "data/features_admission.txt";
+        auto dataset_path = "data/features_skin.txt";
+        
+        //std::vector<unsigned long> dataset_shape = {samples, 7};      //Admission dataset
+        std::vector<unsigned long> dataset_shape = {samples, 3};      //Skin dataset
+        
         std::vector<float> dataset(dataset_shape[0]*dataset_shape[1]);
 
         dataset_shape.clear();
         dataset.clear();
 
         data_loader(dataset_path, dataset);
-
-        /*std::cout << "shape: " << shape.size();
-        for (int i = 0; i < shape.size(); i++){
-                std::cout << "Checking place " << i << "\n";
-                std::cout << shape[i] << ", ";
-        }*/
                 
         std::cout << "\n";
         
         // Load labels
-        auto labels_path = "data/label_admission.txt";
+        //auto labels_path = "data/label_admission.txt";
+        auto labels_path = "data/label_skin.txt";
         
-        // Skin data
-        //std::vector<unsigned long> shape_labels = {245057};
-        //std::vector<float> dataset_labels(shape_labels[0]);
-
-        
-        std::vector<float> dataset_labels(dataset_shape[0]);
+        std::vector<unsigned long> shape_labels = {samples};
+        std::vector<float> dataset_labels(shape_labels[0]);
 
         dataset_labels.clear();
 
@@ -115,8 +112,8 @@ void simple_net(engine::kind engine_kind)
         padding /= 1;
 
         // Declare clipping parameters
-        float clip_upper = 10000.f;
-        float clip_lower = 1e-20;
+        float clip_upper = 10000;
+        float clip_lower = -10000;
 
         // Load inputs inside engine
         memory::dims input_dim = {batch, n_features};
@@ -147,7 +144,7 @@ void simple_net(engine::kind engine_kind)
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
         memory::dims fc1_src_dims = {batch, n_features};
-        int fc1_output_size = 5;
+        int fc1_output_size = 10;
         int fc1 = Dense(fc1_src_dims, fc1_output_size, 
                         input_memory, net_fwd, net_fwd_args, eng);
 
@@ -239,8 +236,9 @@ void simple_net(engine::kind engine_kind)
         assert(net_bwd_data.size() == net_bwd_data_args.size() && "something is missing");
         assert(net_bwd_weights.size() == net_bwd_weights_args.size() && "something is missing");
 
-        int max_iter = 30; // number of iterations for training
+        int max_iter = 500; // number of iterations for training
         int n_iter = 0;
+        int step = 10;
 
         // Prepare memory that will host loss
         std::vector<float> curr_loss(batch);
@@ -256,6 +254,8 @@ void simple_net(engine::kind engine_kind)
         std::vector<float> src_test(batch * n_features), dst_test(batch * fc1_output_size);
 
         std::vector<float> src_test2(batch * fc1_output_size), dst_test2(batch);
+
+        std::vector<float> sigmoid_test2(batch);
 
         unsigned long batch_size = batch;
 
@@ -295,7 +295,7 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_sgd.size(); ++i)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
-                if (n_iter % 1 == 0){  
+                if (n_iter % step == 0){  
                         s.wait();
                         read_from_dnnl_memory(curr_loss.data(), net_fwd_args[loss][DNNL_ARG_DST]);
                         read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
@@ -311,6 +311,8 @@ void simple_net(engine::kind engine_kind)
 
                         read_from_dnnl_memory(src_test2.data(), net_fwd_args[fc2][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
+                        
+                        read_from_dnnl_memory(sigmoid_test2.data(), net_fwd_args[sigmoid1][DNNL_ARG_DST]);
                         s.wait();
 
                         std::cout << "Gradient of Loss:\n";
@@ -336,6 +338,8 @@ void simple_net(engine::kind engine_kind)
                         print_vector2(src_test2);
                         std::cout << "FC2 DST:\n";
                         print_vector2(dst_test2);
+                        std::cout << "Sigmoid DST:\n";
+                        print_vector2(sigmoid_test2);
                         
                         std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
                         npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, curr_loss);
@@ -344,9 +348,7 @@ void simple_net(engine::kind engine_kind)
                 n_iter++;
         }
 
-
-
-
+        s.wait();
 }
 
 int main(int argc, char **argv)
