@@ -260,21 +260,6 @@ void simple_net(engine::kind engine_kind)
         // Prepare memory that will host final output
         std::vector<float> sigmoid_test2(batch);
 
-        // Prepare memory that will host BCE Loss computations
-        float loss_sum_test, add2_test, add1_test;
-        std::vector<float> y_true_transpose_test(batch);
-        std::vector<float> y_true_inv_test(batch);
-        std::vector<float> y_hat_inv_log_test(batch);
-        std::vector<float> y_hat_inv_test(batch);
-        std::vector<float> y_hat_log_test(batch);
-
-        // Prepare memory that will host backward BCE Loss computations
-        
-        std::vector<float> loss_diff_test(batch);
-        std::vector<float> sub_den_test(batch);
-        std::vector<float> y_hat_squared_test(batch);
-        std::vector<float> sub_num_test(batch);
-        
         //unsigned long batch_size = batch;
         unsigned long batch_size = max_iter/step;
         const unsigned long loss_dim [] = {batch_size};
@@ -332,22 +317,6 @@ void simple_net(engine::kind engine_kind)
                         read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
                         
                         read_from_dnnl_memory(sigmoid_test2.data(), net_fwd_args[sigmoid1][DNNL_ARG_DST]);
-
-                        int loss_aux = loss-1;
-                        read_from_dnnl_memory(&loss_sum_test, net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(&add2_test, net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(&add1_test, net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(y_true_transpose_test.data(), net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(y_true_inv_test.data(), net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(y_hat_inv_log_test.data(), net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(y_hat_inv_test.data(), net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(y_hat_log_test.data(), net_fwd_args[loss_aux--][DNNL_ARG_DST]);
-
-                        int loss_back_aux = loss_back;
-                        read_from_dnnl_memory(loss_diff_test.data(), net_bwd_data_args[loss_back_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(sub_den_test.data(), net_bwd_data_args[loss_back_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(y_hat_squared_test.data(), net_bwd_data_args[loss_back_aux--][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(sub_num_test.data(), net_bwd_data_args[loss_back_aux--][DNNL_ARG_DST]);
                         
                         s.wait();
 
@@ -378,31 +347,6 @@ void simple_net(engine::kind engine_kind)
                         std::cout << "Sigmoid DST:\n";
                         print_vector2(sigmoid_test2);
 
-                        std::cout << "\nPrinting BCE Loss steps:\n";
-                        std::cout << "loss_sum: " << loss_sum_test << "\n";
-                        std::cout << "add2: " << add2_test << "\n";
-                        std::cout << "add1: " << add1_test << "\n";
-                        std::cout << "y_true_transpose:\n";
-                        print_vector2(y_true_transpose_test);
-                        std::cout << "y_true_inv:\n";
-                        print_vector2(y_true_inv_test);
-                        std::cout << "y_hat_inv_log:\n";
-                        print_vector2(y_hat_inv_log_test);
-                        std::cout << "y_hat_inv:\n";
-                        print_vector2(y_hat_inv_test);
-                        std::cout << "y_hat_log:\n";
-                        print_vector2(y_hat_log_test);
-                        
-                        std::cout << "\nPrinting backward BCE Loss steps:\n";
-                        std::cout << "loss_diff:\n";
-                        print_vector2(loss_diff_test);
-                        std::cout << "sub_den:\n";
-                        print_vector2(sub_den_test);
-                        std::cout << "y_hat_squared:\n";
-                        print_vector2(y_hat_squared_test);
-                        std::cout << "sub_num:\n";
-                        print_vector2(sub_num_test);
-                        
                         loss_history[(int)n_iter/step] = curr_loss;
                 }
 
