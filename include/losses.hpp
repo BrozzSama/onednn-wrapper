@@ -193,34 +193,6 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
     net_args.push_back({{DNNL_ARG_SRC, y_true},
                         {DNNL_ARG_DST, y_true_transpose}});  
 
-    /*
-    // Reorder y_true and log(y_hat) from nc to cn, otherwise inner product receives wrong dimensions
-
-    std::cout << "Binary cross entropy loss: reordering y_true\n";
-
-    auto y_true_transpose = dnnl::memory(vector_transpose_md, eng);
-
-    auto reorder_pd = dnnl::reorder::primitive_desc(eng, vector_md, eng, vector_transpose_md);
-    //auto reorder_prim = dnnl::reorder(reorder_pd);
-
-    net.push_back(dnnl::reorder(reorder_pd));
-
-    std::unordered_map<int, dnnl::memory> reorder_args;
-    reorder_args.insert({DNNL_ARG_SRC, y_true});
-    reorder_args.insert({DNNL_ARG_DST, y_true_transpose});
-
-    net_args.push_back(reorder_args);
-
-    //net.push_back(dnnl::reorder(y_true, y_true_transpose));
-    //net_args.push_back({{DNNL_ARG_FROM, y_true}, {DNNL_ARG_TO, y_true_transpose}});
-
-    std::cout << "Binary cross entropy loss: reordering y_hat_log\n";
-
-    auto y_hat_log_transpose = dnnl::memory(vector_transpose_md, eng);
-    net.push_back(dnnl::reorder(y_hat_log, y_hat_log_transpose));
-    net_args.push_back({{DNNL_ARG_FROM, y_hat_log}, {DNNL_ARG_TO, y_hat_log_transpose}});
-    */
-
     std::cout << "Binary cross entropy loss: creating inner product 1\n";
 
     auto add1 = dnnl::memory(scalar_md, eng);
@@ -238,24 +210,9 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
 
     // 6) Perform inner_product(1-y_true, log(1-y_hat))
 
-    /*
-    // Reorder 1-y_true and log(1-y_hat) from nc to cn, otherwise inner product receives wrong dimensions
-
-    auto y_true_inv_transpose = dnnl::memory(vector_transpose_md, eng);
-    net.push_back(dnnl::reorder(y_true_inv, y_true_inv_transpose));
-    net_args.push_back({{DNNL_ARG_FROM, y_true_inv}, {DNNL_ARG_TO, y_true_inv_transpose}});
-
-    auto y_hat_inv_log_transpose = dnnl::memory(vector_transpose_md, eng);
-    net.push_back(dnnl::reorder(y_hat_inv_log, y_hat_inv_log_transpose));
-    net_args.push_back({{DNNL_ARG_FROM, y_hat_inv_log}, {DNNL_ARG_TO, y_hat_inv_log_transpose}});
-    */
-
     std::cout << "Binary cross entropy loss: creating inner product 2\n";
 
     auto add2 = dnnl::memory(scalar_md, eng);
-
-    //auto matmul2_desc = dnnl::matmul::desc(y_true_inv_reordered_md, y_hat_inv_log_md, NULL, add2_md);
-    //auto matmul2_pd = dnnl::matmul::primitive_desc(matmul2_desc, eng);
 
     net.push_back(dnnl::inner_product_forward(ip_pd));
     net_args.push_back({{DNNL_ARG_SRC, y_true_inv},
@@ -291,11 +248,10 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
 
     auto loss = dnnl::memory(scalar_md, eng);
 
-    float batch_size_inv = 1/y_true.get_desc().dims()[0];
+    float batch_size_inv = (float) 1/dim_nc[0];
 
-    //auto loss_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
-    //                                            y_true_reordered.get_desc(), -batch_size_inv, 0.f);
-    //auto loss_pd = dnnl::eltwise_forward::primitive_desc(loss_desc, eng);
+    std::cout << "Batch size inv: " << batch_size_inv << "\n";
+    std::cout << "Batch size: " << y_true.get_desc().dims()[0] << "\n";
 
     auto divide_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
                                                 scalar_md, -batch_size_inv, 0.f);
@@ -308,16 +264,20 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
     return net.size() - 1;
 }
 
-int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true, int batch,
+int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true,
                            std::vector<dnnl::primitive> &net,
                            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
                            dnnl::engine eng)
 {
     dnnl::memory::dims dim_nc = {y_hat.get_desc().dims()[0], 1};
+    dnnl::memory::dims dim_cn = {1, y_hat.get_desc().dims()[0]};
     dnnl::memory::dims dim_scalar = {1, 1};
+    dnnl::memory::dims dim_matrix = {dim_nc[0], dim_nc[0]};
 
     // memory descriptor used for all vectors
     dnnl::memory::desc vector_md = dnnl::memory::desc(dim_nc, dt::f32, tag::nc);
+    dnnl::memory::desc vector_transpose_md = dnnl::memory::desc(dim_cn, dt::f32, tag::cn);
+    dnnl::memory::desc matrix_md = dnnl::memory::desc(dim_matrix, dt::f32, tag::nc);
 
     // 1) y_hat - y_true
     dnnl::memory sub_num = dnnl::memory(vector_md, eng);
@@ -331,16 +291,6 @@ int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true, int bat
     auto sub_num_pd = dnnl::sum::primitive_desc(vector_md, scales_num, sub_vector_num_md, eng);
 
     std::cout << "Created sum primitive" << "\n"; 
-
-    /*
-    std::vector<float> init_values(product(dim_nc));
-
-    for (int i = 0; i<init_values.size(); i++){
-        init_values[i] = 65.f;
-    }
-
-    write_to_dnnl_memory((void*) init_values.data(), numerator_sub);
-    */
 
     net.push_back(dnnl::sum(sub_num_pd));
 
@@ -370,7 +320,7 @@ int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true, int bat
     dnnl::memory sub_den = dnnl::memory(vector_md, eng);
 
     // Create scale for subtraction
-    std::vector<float> scales_den = {(float) batch, (float) -batch};
+    std::vector<float> scales_den = {(float) dim_nc[0], (float) -dim_nc[0]};
 
     std::vector<dnnl::memory::desc> sub_vector_den_md = {y_hat.get_desc(), vector_md};
     std::vector<dnnl::memory> sub_vector_den = {y_hat, y_hat_squared};
@@ -390,63 +340,21 @@ int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true, int bat
 
     net_args.push_back(sum_args_den);
 
-
-    // 4) log(y_hat - y_true) => log(sub_num)
-   
-    auto log_num = dnnl::memory(vector_md, eng);
-
-    auto log_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_log,
-                                                vector_md, 0.f, 0.f);
-    auto log_pd = dnnl::eltwise_forward::primitive_desc(log_desc, eng);
-
-    net.push_back(dnnl::eltwise_forward(log_pd));
-    net_args.push_back({{DNNL_ARG_SRC, sub_num},
-                        {DNNL_ARG_DST, log_num}});
-
-    // 5) log(N * y_hat - N * y_hat_squared) => log(sub_den)
-
-    auto log_den = dnnl::memory(vector_md, eng);
-
-    net.push_back(dnnl::eltwise_forward(log_pd));
-    net_args.push_back({{DNNL_ARG_SRC, sub_den},
-                        {DNNL_ARG_DST, log_den}});
-
-    // 6) log(sub_num) - log(sub_den)
-
-    dnnl::memory sub_logs = dnnl::memory(vector_md, eng);
-
-    // Create scale for subtraction
-    std::vector<float> scales_logs = {1.f, -1.f};
-
-    std::vector<dnnl::memory::desc> sub_vector_logs_md = {vector_md, vector_md};
-    std::vector<dnnl::memory> sub_vector_logs = {sub_num, sub_den};
-
-    auto sub_logs_pd = dnnl::sum::primitive_desc(vector_md, scales_logs, sub_vector_logs_md, eng);
-
-    std::cout << "Created sum primitive" << "\n"; 
-
-    net.push_back(dnnl::sum(sub_logs_pd));
-
-    std::unordered_map<int, dnnl::memory> sum_args_logs;
-
-    sum_args_logs.insert({DNNL_ARG_DST, sub_logs});
-    for (int i = 0; i<sub_vector_logs.size(); i++){
-        sum_args_logs.insert({DNNL_ARG_MULTIPLE_SRC + i, sub_vector_logs[i]});
-    }
-
-    net_args.push_back(sum_args_logs);
-
-    // 7) exp(log(sub_num) - log(sub_den))
+    // 4) Perform final division and get loss_diff
 
     auto loss_diff = dnnl::memory(vector_md, eng);
 
-    auto exp_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_exp,
-                                                vector_md, 0.f, 0.f);
-    auto exp_pd = dnnl::eltwise_forward::primitive_desc(exp_desc, eng);
+    auto division_desc = dnnl::binary::desc(dnnl::algorithm::binary_div, vector_md, vector_md, vector_md);
+    auto division_pd = dnnl::binary::primitive_desc(division_desc, eng);
+    
+    net.push_back(dnnl::binary(division_pd));
+    
+    std::unordered_map<int, dnnl::memory> division_args;
+    division_args.insert({DNNL_ARG_SRC_0, sub_num});
+    division_args.insert({DNNL_ARG_SRC_1, sub_den});
+    division_args.insert({DNNL_ARG_DST, loss_diff});
 
-    net.push_back(dnnl::eltwise_forward(exp_pd));
-    net_args.push_back({{DNNL_ARG_SRC, sub_logs},
-                        {DNNL_ARG_DST, loss_diff}});
+    net_args.push_back(division_args);
 
     return net.size() - 1;
 }

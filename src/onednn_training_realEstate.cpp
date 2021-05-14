@@ -163,8 +163,7 @@ void simple_net(engine::kind engine_kind)
 
         // L2 loss
 
-        int loss = L2_Loss(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, 
-                          net_fwd, net_fwd_args, eng);
+        int loss = L2_Loss(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_fwd, net_fwd_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Data)-------------------------------------
