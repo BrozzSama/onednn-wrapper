@@ -6,23 +6,6 @@
 #include <random>
 #include <time.h>
 
-// Macro definitions to recover L2 loss layer in backward
-
-#define L2_SUB 0
-#define L2_LOSS 1
-
-// Macro definition to recover Binary cross entropy loss layer in backward
-
-#define BCE_LOG 0
-#define BCE_INV 1
-#define BCE_LOG_INV 2
-#define BCE_TRUE_INV 3
-#define BCE_IP 4
-#define BCE_IP_INV 5
-#define BCE_SUM 6
-#define BCE_NORM 7
-
-
 using tag = dnnl::memory::format_tag;
 using dt = dnnl::memory::data_type;
 
@@ -208,14 +191,14 @@ int Dense(dnnl::memory::dims src_dims,
     std::cout << "Initializing weights: \n";
     for (int i = 0; i<fc_weights.size(); i++){
         fc_weights[i] = norm_dist(generator);
-        std::cout << fc_weights[i] << " ";
+        //std::cout << fc_weights[i] << " ";
     }
     std::cout << "\n";
     
     std::cout << "Initializing biases: \n";
     for (int i = 0; i<fc_bias.size(); i++){
         fc_bias[i] = norm_dist(generator);
-        std::cout << fc_bias[i] << " ";
+        //std::cout << fc_bias[i] << " ";
     }
     std::cout << "\n";
 
@@ -232,7 +215,23 @@ int Dense(dnnl::memory::dims src_dims,
     write_to_dnnl_memory(fc_weights.data(), weights_mem_fc);
 
     auto weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::any);
+    //auto weights_md_fc = weights_mem_fc.get_desc();
 
+    /*
+    std::cout << "Dimensions:\n";
+    for(int i=0; i<src_md_fc.dims().size(); i++)
+        std::cout << src_md_fc.dims()[i] << " ";
+    std::cout << "\n";
+    for(int i=0; i<weights_md_fc.dims().size(); i++)
+        std::cout << weights_md_fc.dims()[i] << " ";
+    std::cout << "\n";
+    for(int i=0; i<bias_md_fc.dims().size(); i++)
+        std::cout << bias_md_fc.dims()[i] << " ";
+    std::cout << "\n";
+    for(int i=0; i<dst_md_fc.dims().size(); i++)
+        std::cout << dst_md_fc.dims()[i] << " ";
+    std::cout << "\n";
+    */
     auto fc_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, src_md_fc,
                                                 weights_md_fc, bias_md_fc, dst_md_fc);
 

@@ -5,23 +5,6 @@
 #include <cmath>
 #include <random>
 
-// Macro definitions to recover L2 loss layer in backward
-
-#define L2_SUB 0
-#define L2_LOSS 1
-
-// Macro definition to recover Binary cross entropy loss layer in backward
-
-#define BCE_LOG 0
-#define BCE_INV 1
-#define BCE_LOG_INV 2
-#define BCE_TRUE_INV 3
-#define BCE_IP 4
-#define BCE_IP_INV 5
-#define BCE_SUM 6
-#define BCE_NORM 7
-
-
 using tag = dnnl::memory::format_tag;
 using dt = dnnl::memory::data_type;
 

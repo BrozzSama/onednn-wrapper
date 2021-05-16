@@ -5,22 +5,6 @@
 #include <cmath>
 #include <random>
 
-// Macro definitions to recover L2 loss layer in backward
-
-#define L2_SUB 0
-#define L2_LOSS 1
-
-// Macro definition to recover Binary cross entropy loss layer in backward
-
-#define BCE_LOG 0
-#define BCE_INV 1
-#define BCE_LOG_INV 2
-#define BCE_TRUE_INV 3
-#define BCE_IP 4
-#define BCE_IP_INV 5
-#define BCE_SUM 6
-#define BCE_NORM 7
-
 int Conv2D_back_data(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
@@ -125,6 +109,20 @@ int Dense_back_data(dnnl::memory diff_dst,
     auto fc_diff_src_md = fc_diff_src_memory.get_desc();
 
     // Recreate forward descriptor (see conv2dback)
+
+    std::cout << "Dimensions:\n";
+    for(int i=0; i<fc_diff_src_md.dims().size(); i++)
+        std::cout << fc_diff_src_md.dims()[i] << " ";
+    std::cout << "\n";
+    for(int i=0; i<fc_weights_md.dims().size(); i++)
+        std::cout << fc_weights_md.dims()[i] << " ";
+    std::cout << "\n";
+    for(int i=0; i<fc_bias_md.dims().size(); i++)
+        std::cout << fc_bias_md.dims()[i] << " ";
+    std::cout << "\n";
+    for(int i=0; i<fc_fwd_dst_md.dims().size(); i++)
+        std::cout << fc_fwd_dst_md.dims()[i] << " ";
+    std::cout << "\n";
 
     auto fc_fwd_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, fc_diff_src_md,
                                                 fc_weights_md, fc_bias_md, fc_fwd_dst_md);
