@@ -61,3 +61,8 @@ void data_loader(std::string filename, std::vector<float> &data)
     else
         std::cout << "Unable to open file";    
 }
+
+inline bool file_exists (const std::string& name) {
+    std::ifstream f(name.c_str());
+    return f.good();
+}

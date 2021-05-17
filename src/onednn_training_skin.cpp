@@ -43,12 +43,31 @@
 #include "../include/losses.hpp"
 #include "../include/weights_update.hpp"
 #include "../include/primitive_wrappers.hpp"
-#include "../include/rapidcsv.hpp"
+#include "../include/json.hpp"
 
 using namespace dnnl;
 
-void simple_net(engine::kind engine_kind)
+void simple_net(engine::kind engine_kind, int argc, char** argv)
 {
+        // Check if configuration file exists
+
+        nlohmann::json config_file;
+
+        if (argc != 3){
+                std::cout << "No configuration file specified\n";
+                exit(1);
+        }
+
+        // Read JSON configuration
+        std::ifstream config_file_stream(argv[2]);
+        if (config_file_stream.is_open())
+        {
+                config_file_stream >> config_file;
+                config_file_stream.close();
+        }
+        else
+                std::cout << "Unable to open file";    
+ 
         // RNG for ALL purposes
         std::default_random_engine generator;
 
@@ -238,9 +257,9 @@ void simple_net(engine::kind engine_kind)
         assert(net_bwd_data.size() == net_bwd_data_args.size() && "something is missing");
         assert(net_bwd_weights.size() == net_bwd_weights_args.size() && "something is missing");
 
-        int max_iter = 1000; // number of iterations for training
+        int max_iter = config_file["iterations"]; // number of iterations for training
+        int step = config_file["step"];
         int n_iter = 0;
-        int step = 10;
 
         // Prepare memory that will host loss
         std::vector<float> curr_loss_diff(batch);
@@ -362,5 +381,7 @@ void simple_net(engine::kind engine_kind)
 
 int main(int argc, char **argv)
 {
-        return handle_example_errors(simple_net, parse_engine_kind(argc, argv));
+        // Config file
+        int extra_args = 1;
+        return handle_example_errors(simple_net, parse_engine_kind(argc, argv, extra_args), argc, argv);
 }
