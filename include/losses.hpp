@@ -129,6 +129,23 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
     std::cout << "Binary cross entropy loss: creating scalar md\n";
     dnnl::memory::desc scalar_md = dnnl::memory::desc(dim_scalar, dt::f32, tag::nc);
 
+    // 0) Clip y_hat to avoid performing log(0)
+    
+    float upper = 1-1e-7;
+    float lower = 1e-7; 
+
+    auto y_hat_clip = dnnl::memory(vector_transpose_md, eng);
+
+    auto clip_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_clip,
+                                                vector_md, lower, upper);
+    auto clip_pd = dnnl::eltwise_forward::primitive_desc(clip_desc, eng);
+
+    std::cout << "Adding clip\n";
+    net.push_back(dnnl::eltwise_forward(clip_pd));
+    std::cout << "Adding clip arguments\n";
+    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+                        {DNNL_ARG_DST, y_hat_clip}});
+
     // 1) Perform elementwise log on y_hat
 
     std::cout << "Binary cross entropy loss: creating log 1\n";
@@ -136,11 +153,11 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
     auto y_hat_log = dnnl::memory(vector_transpose_md, eng);
 
     auto log_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_log,
-                                                vector_md, 0.f, 0.f);
+                                                vector_transpose_md, 0.f, 0.f);
     auto log_pd = dnnl::eltwise_forward::primitive_desc(log_desc, eng);
 
     net.push_back(dnnl::eltwise_forward(log_pd));
-    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+    net_args.push_back({{DNNL_ARG_SRC, y_hat_clip},
                         {DNNL_ARG_DST, y_hat_log}});
 
     // 2) Perform elementwise linear on y_hat with alpha = -1; beta = 1 ie. 1-y_hat
@@ -150,11 +167,11 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
     auto y_hat_inv = dnnl::memory(vector_transpose_md, eng);
 
     auto inv_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, dnnl::algorithm::eltwise_linear,
-                                                vector_md, -1.f, 1.f);
+                                                vector_transpose_md, -1.f, 1.f);
     auto inv_pd = dnnl::eltwise_forward::primitive_desc(inv_desc, eng);
 
     net.push_back(dnnl::eltwise_forward(inv_pd));
-    net_args.push_back({{DNNL_ARG_SRC, y_hat},
+    net_args.push_back({{DNNL_ARG_SRC, y_hat_clip},
                         {DNNL_ARG_DST, y_hat_inv}});
 
     // 3) Perform log on previously obtained element ie. log(1-y_hat)
