@@ -17,10 +17,10 @@ elif [ ! -f "$1" ]; then
     echo "File $1 does not exist"
 else
 	script=$1
-	rm *.sh.* > /dev/null 2>&1
+	#rm *.sh.* > /dev/null 2>&1
 	#qsub
 	echo "Submitting job:"
-	qsub -l nodes=1:$property:ppn=2 -d . $script
+	qsub -l nodes=1:$property:ppn=2 -d . $script -F "$2 $3"
 	# qsub -q batch@v-qsvr-nda-l nodes=ppn=2 -I
 	# pbsnodes
 	#qstat
@@ -31,7 +31,7 @@ else
 		sleep 1
 		echo -ne "."
 		((timeout++))
-		if [ $timeout == 60 ]; then
+		if [ $timeout == 3600 ]; then
 			echo "TimeOut 60 seconds: Job is still queued for execution, check for output file later (*.sh.o)"
 			break
 		fi
