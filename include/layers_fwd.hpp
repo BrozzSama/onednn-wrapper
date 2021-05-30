@@ -218,8 +218,8 @@ int Dense(dnnl::memory::dims src_dims,
      std::cout << "Write weights to memory: \n";
     write_to_dnnl_memory(fc_weights.data(), weights_mem_fc);
 
-    auto weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::any);
-    //auto weights_md_fc = weights_mem_fc.get_desc();
+    //auto weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::any);
+    auto weights_md_fc = weights_mem_fc.get_desc();
 
     
     std::cout << "Dimensions:\n";
@@ -243,10 +243,13 @@ int Dense(dnnl::memory::dims src_dims,
     
     // Check if the types are proper
     std::cout << "Start type checking: \n";
+    std::cout << "Check source type\n";
     src_mem_fc = checkType(fc_pd.src_desc(), input, net, net_args, eng);
+    std::cout << "Check weights type\n";
     weights_mem_fc = checkType(fc_pd.weights_desc(), weights_mem_fc, net, net_args, eng);
+    std::cout << "Check bias type\n";
     bias_mem_fc = checkType(fc_pd.bias_desc(), bias_mem_fc, net, net_args, eng);
-
+    
     // Create memory for output (no check needed)
     auto conv_dst_memory = dnnl::memory(fc_pd.dst_desc(), eng);
 
