@@ -29,37 +29,23 @@ void print_vector(std::vector<dnnl::memory::dim> const &input)
     std::cout << "\n";
 }
 
-void print_vector2(std::vector<float> input)
+void print_vector2(std::vector<float> input, int user_limit=100)
 {
     int limit;
-    if (input.size() > 100)
+    if (input.size() > user_limit)
     {
-        limit = 100;
+        limit = user_limit;
     }
     else
     {
         limit = input.size();
     }
+    
     for (int i = 0; i < limit; i++)
     {
         std::cout << input.at(i) << ' ';
     }
     std::cout << "\n";
-}
-
-void data_loader(std::string filename, std::vector<float> &data)
-{
-    std::ifstream myfile(filename);
-    int i = 0;
-    if (myfile.is_open())
-    {
-        while (myfile >> data[i++]){}
-
-        myfile.close();
-    }
-
-    else
-        std::cout << "Unable to open file";    
 }
 
 inline bool file_exists (const std::string& name) {

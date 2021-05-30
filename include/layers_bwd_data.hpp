@@ -13,14 +13,14 @@ int Conv2D_back_data(dnnl::memory diff_dst,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
 {
-    auto conv_diff_src_memory = dnnl::memory(conv2d_fwd[DNNL_ARG_SRC].get_desc(), eng);
+    auto conv_diff_src_md = conv2d_fwd[DNNL_ARG_SRC].get_desc();
+    auto conv_diff_src_memory = dnnl::memory(conv_diff_src_md, eng);
     
     std::cout << "Allocating memory for backward convolution\n";
     // Create memory area for backward pass (get types from conv2d_fwd)
     auto conv_weights = conv2d_fwd[DNNL_ARG_WEIGHTS];
     auto conv_weights_md = conv2d_fwd[DNNL_ARG_WEIGHTS].get_desc();
     
-    auto conv_bias = conv2d_fwd[DNNL_ARG_BIAS];
     auto conv_bias_md = conv2d_fwd[DNNL_ARG_BIAS].get_desc();
     
     std::cout << "Obtaining memory descriptors for backward convolution\n";
@@ -56,24 +56,18 @@ int Conv2D_back_data(dnnl::memory diff_dst,
                                                        dnnl::algorithm::convolution_direct, conv_bwd_src_md, conv_weights_md,
                                                        conv_bias_md, conv_fwd_dst_md, conv_strides, conv_dilates, conv_padding,
                                                        conv_padding);
-    std::cout << "Settings post-ops\n";
 
     std::cout << "Creating Convolutional layer primitive descriptor\n";
 
     auto conv_fwd_pd = dnnl::convolution_forward::primitive_desc(conv_fwd_desc, eng);
-
-    auto conv_diff_src_md = conv2d_fwd[DNNL_ARG_SRC].get_desc();
-    //auto conv_bwd_src_memory = dnnl::memory(conv_bwd_src_md, eng);
-
-    std::cout << "Creating backwrard Convolutional layer primitive descriptor\n";
+    
+    std::cout << "Creating backward Convolutional layer primitive descriptor\n";
     auto conv_bwd_desc = dnnl::convolution_backward_data::desc(dnnl::algorithm::convolution_direct,
                                                             conv_diff_src_md, conv_weights_md,
                                                             conv_diff_dst_md, conv_strides, conv_dilates, conv_padding, conv_padding);
     
     auto conv_bwd_pd = dnnl::convolution_backward_data::primitive_desc(conv_bwd_desc, eng, conv_fwd_pd);
 
-    std::cout << "Checking diff src memory type\n";
-    conv_diff_src_memory = checkType(conv_bwd_pd.diff_src_desc(), conv2d_fwd[DNNL_ARG_SRC], net, net_args, eng);
     std::cout << "Checking diff dst memory type\n";
     auto conv_diff_dst_memory = checkType(conv_bwd_pd.diff_dst_desc(), diff_dst, net, net_args, eng);
     net.push_back(dnnl::convolution_backward_data(conv_bwd_pd));

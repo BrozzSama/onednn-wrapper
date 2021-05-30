@@ -1,4 +1,9 @@
 {
-    "iterations": 1000,
-    "step": 1
+    "iterations": 10000,
+    "minibatch_size": 100,
+    "step": 100,
+    "learning_rate": 0.01,
+    "clip_upper": 100,
+    "clip_lower": -100,
+    "samples": 10000
   }
