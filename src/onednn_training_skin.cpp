@@ -242,10 +242,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         unsigned long batch_size = max_iter/step;
         const unsigned long loss_dim [] = {batch_size};
 
-        read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
-        s.wait();
-        //print_vector2(curr_loss);
-
         // execute
         while (n_iter < max_iter)
         {
@@ -256,6 +252,22 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
                 for (size_t i = 0; i < net_fwd.size(); ++i)
                         net_fwd.at(i).execute(s, net_fwd_args.at(i));
+
+                if (n_iter == 0){
+                    read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
+                    read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
+                    read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
+                    read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
+                    s.wait();
+                    std::cout << "FC1 Weights (initial):\n";
+                    print_vector2(weights_fc1_test);
+                    std::cout << "FC1 Bias: (initial)\n";
+                    print_vector2(bias_fc1_test);
+                    std::cout << "FC2 Weights: (initial)\n";
+                    print_vector2(weights_fc2_test);
+                    std::cout << "FC2 Bias: (initial)\n";
+                    print_vector2(bias_fc2_test);
+                }
 
                 // Compute the gradients with respect to the outputs
 
@@ -275,9 +287,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                 for (size_t i = 0; i < net_sgd.size(); ++i)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
-                // Change data
-                skin_data.write_to_memory(input_memory, labels_memory);
-
                 if (n_iter % step == 0){  
                         s.wait();
                         read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
@@ -286,10 +295,10 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
-                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(diff_bias_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_bias][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(diff_bias_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_bias][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_SRC]);
+                        read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_SRC]);
+                        read_from_dnnl_memory(diff_bias_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_bias][DNNL_ARG_SRC]);
+                        read_from_dnnl_memory(diff_bias_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_bias][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
                         read_from_dnnl_memory(labels_test.data(), labels_memory);
                         read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
@@ -337,10 +346,12 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         loss_history[(int)n_iter/step] = curr_loss;
                 }
 
+                // Change data
+                skin_data.write_to_memory(input_memory, labels_memory);
+
                 n_iter++;
         }
 
-        //std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
         std::string loss_filename = config_file["loss_filename"];  
         npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, loss_history);
 
