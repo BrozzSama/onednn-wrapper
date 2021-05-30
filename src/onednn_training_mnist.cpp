@@ -43,64 +43,70 @@
 #include "../include/losses.hpp"
 #include "../include/weights_update.hpp"
 #include "../include/primitive_wrappers.hpp"
+#include "../include/data_loader.hpp"
 #include "../include/rapidcsv.hpp"
+#include "../include/json.hpp"
 
 using namespace dnnl;
 
-void simple_net(engine::kind engine_kind)
+void simple_net(engine::kind engine_kind, int argc, char** argv)
 {
+        // Check if configuration file exists
+
+        nlohmann::json config_file;
+
+        if (argc != 3){
+                std::cout << "No configuration file specified\n";
+                exit(1);
+        }
+
+        // Read JSON configuration
+        std::ifstream config_file_stream(argv[2]);
+        if (config_file_stream.is_open())
+        {
+                config_file_stream >> config_file;
+                config_file_stream.close();
+        }
+        else
+                std::cout << "Unable to open file"; 
+
         // RNG for ALL purposes
         std::default_random_engine generator;
 
+        // Open oneAPI engine
+        auto eng = engine(engine_kind, 0);
+        stream s(eng);
+
         // MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)
         //unsigned long samples = 245057;
-        unsigned long samples = 100;
+        const unsigned long samples = config_file["samples"];
+        const long batch = config_file["minibatch_size"];
         // Load dataset
         auto dataset_path = "data/features_mnist.txt";
-        
+        auto labels_path = "data/label_mnist.txt";
+
         std::vector<unsigned long> dataset_shape = {samples, 28, 28};      //MNIST dataset
-        
         std::vector<float> dataset(dataset_shape[0]*dataset_shape[1]*dataset_shape[2]);
 
-        dataset_shape.clear();
-        dataset.clear();
+        // Data loader 
 
-        data_loader(dataset_path, dataset);
-                
-        std::cout << "\n";
-        
-        // Load labels
-        //auto labels_path = "data/label_admission.txt";
-        auto labels_path = "data/label_mnist.txt";
-        
-        std::vector<unsigned long> shape_labels = {samples};
-        std::vector<float> dataset_labels(shape_labels[0]);
+        DataLoader mnist_data(dataset_path, labels_path, samples, batch, dataset_shape, eng);
 
-        dataset_labels.clear();
-
-        //npy::LoadArrayFromNumpy(labels_path, shape_labels, fortran_order, dataset_labels);
-
-        data_loader(labels_path, dataset_labels);
+        std::cout << "Dataloader instantiated\n";
 
         using tag = memory::format_tag;
         using dt = memory::data_type;
-
-        std::cout << "Starting engine...\n";
-
-        auto eng = engine(engine_kind, 0);
-        stream s(eng);
 
         // Vector of primitives and their execute arguments
         std::vector<primitive> net_fwd, net_bwd_data, net_bwd_weights, net_sgd;
         std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
 
-        const int batch = dataset_shape[0];
         const int patch_size = dataset_shape[1];
         const int n_features = dataset_shape[1];
         const int stride = 1;
         const int kernel_size = 3;
         const int n_kernels = 64;
-        const float learning_rate = 0.001;
+        const float learning_rate = config_file["learning_rate"];
 
         // Compute the padding to preserve the same dimension in input and output
         // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
@@ -109,21 +115,20 @@ void simple_net(engine::kind engine_kind)
         padding /= 1;
 
         // Declare clipping parameters
-        float clip_upper = 10000;
-        float clip_lower = -10000;
+        float clip_upper = config_file["clip_upper"];
+        float clip_lower = config_file["clip_lower"];
 
-        // Load inputs inside engine
+        // Initialize input and write first batch
         memory::dims input_dim = {batch, 1, patch_size, patch_size};
         auto input_memory = memory({{input_dim}, dt::f32, tag::nchw}, eng);
-        write_to_dnnl_memory(dataset.data(), input_memory);
-
-        std::cout << "I wrote the input data!\n";
 
         memory::dims labels_dim = {batch, 1};
         auto labels_memory = memory({{labels_dim}, dt::f32, tag::nc}, eng);
-        write_to_dnnl_memory(dataset_labels.data(), labels_memory);
 
-        std::cout << "I wrote the label data!\n";
+        std::cout << "Writing first batch to memory\n";
+        mnist_data.write_to_memory(input_memory, labels_memory);
+
+        std::cout << "Loaded first batch \n";
 
         // Convolutional layer 1
         int conv1 = Conv2D(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, 
@@ -256,9 +261,9 @@ void simple_net(engine::kind engine_kind)
         assert(net_bwd_data.size() == net_bwd_data_args.size() && "something is missing");
         assert(net_bwd_weights.size() == net_bwd_weights_args.size() && "something is missing");
 
-        int max_iter = 100; // number of iterations for training
+        int max_iter = config_file["iterations"]; // number of iterations for training
         int n_iter = 0;
-        int step = 10;
+        int step = config_file["step"];
 
         // Prepare memory that will host loss
         std::vector<float> curr_loss_diff(batch);
@@ -267,16 +272,23 @@ void simple_net(engine::kind engine_kind)
 
         // Prepare memory that will host weights and biases
         std::vector<float> weight_test(128);
-        std::vector<float> weights_fc1_test(n_features * fc1_output_size), diff_weights_fc1_test(n_features * fc1_output_size), diff_dst_test(batch*fc1_output_size);
-        std::vector<float> weights_fc2_test(fc1_output_size), diff_weights_fc2_test(fc1_output_size);
+        std::vector<float> weights_fc1_test(n_features * fc1_output_size), diff_weights_fc1_test(n_features * fc1_output_size);
+        std::vector<float> weights_fc2_test(fc1_output_size), diff_weights_fc2_test(fc1_output_size), diff_dst_fc2_test(batch*fc1_output_size);
         std::vector<float> bias_fc1_test(fc1_output_size), bias_fc2_test(fc2_output_size);
         
         // Prepare memory that will host src
         std::vector<float> src_test(batch * n_features), dst_test(batch * fc1_output_size);
         std::vector<float> src_test2(batch * fc1_output_size), dst_test2(batch);
         
+        // Convolutional layer
+
+        std::vector<float> conv_test(batch * n_kernels * patch_size * patch_size);
+        std::vector<float> conv_weights_test(batch * n_kernels * kernel_size * kernel_size), conv_diff_weights_test(batch * n_kernels * kernel_size * kernel_size);
+        std::vector<float> conv_diff_dst_test(batch * n_kernels * patch_size * patch_size);
+        
         // Prepare memory that will host final output
         std::vector<float> sigmoid_test2(batch);
+
 
         //unsigned long batch_size = batch;
         unsigned long batch_size = max_iter/step;
@@ -315,56 +327,65 @@ void simple_net(engine::kind engine_kind)
                 for (size_t i = 0; i < net_sgd.size(); ++i)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
+
+                // Change data
+                mnist_data.write_to_memory(input_memory, labels_memory);
+
                 if (n_iter % step == 0){  
                         s.wait();
                         read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
                         read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[clip_loss_back][DNNL_ARG_DST]);
 
-                        /*
-                        read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
-                        read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
+                        
+                        //read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
+                        //read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
-                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST]);
+                        //read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST]);
                         read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
+                        read_from_dnnl_memory(diff_dst_fc2_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
                         
-                        read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
-                        read_from_dnnl_memory(dst_test.data(), net_fwd_args[fc1][DNNL_ARG_DST]);
+                        //read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
+                        //read_from_dnnl_memory(dst_test.data(), net_fwd_args[fc1][DNNL_ARG_DST]);
 
                         read_from_dnnl_memory(src_test2.data(), net_fwd_args[fc2][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
-                        */
+                        
+                        read_from_dnnl_memory(conv_test.data(), net_fwd_args[conv1][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(conv_weights_test.data(), net_fwd_args[conv1][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(sigmoid_test2.data(), net_fwd_args[sigmoid1][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(conv_diff_weights_test.data(), net_bwd_weights_args[conv1_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
+                        read_from_dnnl_memory(conv_diff_dst_test.data(), net_bwd_data_args[conv1_back_data][DNNL_ARG_DIFF_DST]);
                         
                         s.wait();
                         
                         std::cout << "Loss: " << curr_loss << "\n";
                         std::cout << "Gradient of Loss:\n";
                         print_vector2(curr_loss_diff);
-                        /*
-                        std::cout << "FC1 Weights:\n";
+                        
+                        /*std::cout << "FC1 Weights:\n";
                         print_vector2(weights_fc1_test);
                         std::cout << "FC1 Bias:\n";
-                        print_vector2(bias_fc1_test);
+                        print_vector2(bias_fc1_test);*/
                         std::cout << "FC2 Weights:\n";
                         print_vector2(weights_fc2_test);
                         std::cout << "FC2 Bias:\n";
                         print_vector2(bias_fc2_test);
-                        std::cout << "Gradient of FC1 weights:\n";
-                        print_vector2(diff_weights_fc1_test);
                         std::cout << "Gradient of FC2 weights:\n";
-                        print_vector2(diff_weights_fc2_test);
-                        print_vector2(diff_dst_test);
-                        std::cout << "FC1 SRC:\n";
-                        print_vector2(src_test);
-                        std::cout << "FC1 DST:\n";
-                        print_vector2(dst_test);
+                        print_vector2(diff_dst_fc2_test);
                         std::cout << "FC2 SRC:\n";
                         print_vector2(src_test2);
                         std::cout << "FC2 DST:\n";
                         print_vector2(dst_test2);
-                        */
+                        
+                        std::cout << "Convolution DST: \n";
+                        print_vector2(conv_test);
+                        std::cout << "Convolution Weights: \n";
+                        print_vector2(conv_weights_test);
+                        std::cout << "Convolution Diff Weights: \n";
+                        print_vector2(conv_diff_weights_test, 10000);
+                        std::cout << "Convolution Diff DST: \n";
+                        print_vector2(conv_diff_dst_test);
                         std::cout << "Sigmoid DST:\n";
                         print_vector2(sigmoid_test2);
                         
@@ -383,5 +404,8 @@ void simple_net(engine::kind engine_kind)
 
 int main(int argc, char **argv)
 {
-        return handle_example_errors(simple_net, parse_engine_kind(argc, argv));
+        // Config file
+        int extra_args = 1;
+        return handle_example_errors(simple_net, parse_engine_kind(argc, argv, extra_args), argc, argv);
 }
+

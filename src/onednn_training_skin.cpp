@@ -43,6 +43,7 @@
 #include "../include/losses.hpp"
 #include "../include/weights_update.hpp"
 #include "../include/primitive_wrappers.hpp"
+#include "../include/data_loader.hpp"
 #include "../include/json.hpp"
 
 using namespace dnnl;
@@ -66,99 +67,54 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                 config_file_stream.close();
         }
         else
-                std::cout << "Unable to open file";    
- 
+                std::cout << "Unable to open file"; 
+
         // RNG for ALL purposes
         std::default_random_engine generator;
 
-        // Admission dataset (regression)
-        //unsigned long samples = 400;
-        // Skin dataset (binary classification)
-        unsigned long samples = 245057;
-        //unsigned long samples = 1000;
+        // Open oneAPI engine
+        auto eng = engine(engine_kind, 0);
+        stream s(eng);
+
+        // MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)
+        const unsigned long samples = config_file["samples"];
+        const long batch = config_file["minibatch_size"];
         // Load dataset
-        //auto dataset_path = "data/features_admission.txt";
-        auto dataset_path = "data/features_skin.txt";
-        
-        //std::vector<unsigned long> dataset_shape = {samples, 7};      //Admission dataset
+        auto dataset_path = config_file["dataset_path"];
+        auto labels_path = config_file["labels_path"];
+
+
+
         std::vector<unsigned long> dataset_shape = {samples, 3};      //Skin dataset
-        
         std::vector<float> dataset(dataset_shape[0]*dataset_shape[1]);
 
-        dataset_shape.clear();
-        dataset.clear();
+        // Data loader 
 
-        data_loader(dataset_path, dataset);
-                
-        std::cout << "\n";
-        
-        // Load labels
-        //auto labels_path = "data/label_admission.txt";
-        auto labels_path = "data/label_skin.txt";
-        
-        std::vector<unsigned long> shape_labels = {samples};
-        std::vector<float> dataset_labels(shape_labels[0]);
-
-        dataset_labels.clear();
-
-        //npy::LoadArrayFromNumpy(labels_path, shape_labels, fortran_order, dataset_labels);
-
-        data_loader(labels_path, dataset_labels);
+        DataLoader skin_data(dataset_path, labels_path, samples, batch, dataset_shape, eng);
+        std::cout << "Dataloader instantiated\n";
 
         using tag = memory::format_tag;
         using dt = memory::data_type;
-
-        std::cout << "Starting engine...\n";
-
-        auto eng = engine(engine_kind, 0);
-        stream s(eng);
 
         // Vector of primitives and their execute arguments
         std::vector<primitive> net_fwd, net_bwd_data, net_bwd_weights, net_sgd;
         std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
 
-        const int batch = dataset_shape[0];
-        const int patch_size = dataset_shape[1];
         const int n_features = dataset_shape[1];
-        const int stride = 1;
-        const int kernel_size = 3;
-        const int n_kernels = 64;
-        const float learning_rate = 0.001;
-
-        // Compute the padding to preserve the same dimension in input and output
-        // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
-        // padding /= 2;
-        int padding = kernel_size - 1;
-        padding /= 1;
+        const float learning_rate = config_file["learning_rate"];
 
         // Declare clipping parameters
-        float clip_upper = 10000;
-        float clip_lower = -10000;
+        float clip_upper = config_file["clip_upper"];
+        float clip_lower = config_file["clip_lower"];
 
         // Load inputs inside engine
         memory::dims input_dim = {batch, n_features};
-        auto input_memory = memory({{input_dim}, dt::f32, tag::nc}, eng);
-        for (int i = 0; i<dataset.size(); i++){
-                if(std::isnan(dataset[i])){
-                        std::cout << "Found NAN!!!!!\n";
-                }
-        }
-        write_to_dnnl_memory(dataset.data(), input_memory);
-
-        std::cout << "I wrote the input data!\n";
-
-        for (int i = 0; i<dataset_labels.size(); i++){
-                if(std::isnan(dataset_labels[i])){
-                        std::cout << "Found NAN in labels!!!!!\n";
-                }
-        }
-
         memory::dims labels_dim = {batch, 1};
+        auto input_memory = memory({{input_dim}, dt::f32, tag::nc}, eng);
         auto labels_memory = memory({{labels_dim}, dt::f32, tag::nc}, eng);
-        write_to_dnnl_memory(dataset_labels.data(), labels_memory);
 
-        std::cout << "I wrote the label data!\n";
-
+        std::cout << "Writing first batch to memory\n";
+        skin_data.write_to_memory(input_memory, labels_memory);
 
         // PnetCLS: Fully Connected 1
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
@@ -275,6 +231,8 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // Prepare memory that will host src
         std::vector<float> src_test(batch * n_features), dst_test(batch * fc1_output_size);
         std::vector<float> src_test2(batch * fc1_output_size), dst_test2(batch);
+
+        std::vector<float> labels_test(batch);
         
         // Prepare memory that will host final output
         std::vector<float> sigmoid_test2(batch);
@@ -316,11 +274,14 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                 for (size_t i = 0; i < net_sgd.size(); ++i)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
+                // Change data
+                skin_data.write_to_memory(input_memory, labels_memory);
+
                 if (n_iter % step == 0){  
                         s.wait();
                         read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
                         read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[clip_loss_back][DNNL_ARG_DST]);
-
+                        /*
                         read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
@@ -328,10 +289,11 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST]);
                         read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST]);
                         read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
-                        
+                        */
+                        read_from_dnnl_memory(labels_test.data(), labels_memory);
                         read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test.data(), net_fwd_args[fc1][DNNL_ARG_DST]);
-
+                        /*
                         read_from_dnnl_memory(src_test2.data(), net_fwd_args[fc2][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
                         
@@ -355,8 +317,11 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         std::cout << "Gradient of FC2 weights:\n";
                         print_vector2(diff_weights_fc2_test);
                         print_vector2(diff_dst_test);
+                        */
                         std::cout << "FC1 SRC:\n";
-                        print_vector2(src_test);
+                        print_vector2(labels_test, batch);
+                        print_vector2(src_test, batch * dataset_shape[1]);
+                        /*
                         std::cout << "FC1 DST:\n";
                         print_vector2(dst_test);
                         std::cout << "FC2 SRC:\n";
@@ -365,6 +330,8 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         print_vector2(dst_test2);
                         std::cout << "Sigmoid DST:\n";
                         print_vector2(sigmoid_test2);
+                        */
+                        
 
                         loss_history[(int)n_iter/step] = curr_loss;
                 }
