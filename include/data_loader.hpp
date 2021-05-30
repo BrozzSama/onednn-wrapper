@@ -49,8 +49,7 @@ DataLoader::DataLoader(std::string features_path, std::string labels_path, int _
 }
 
 void DataLoader::write_to_memory(dnnl::memory dst_mem_features, dnnl::memory dst_mem_labels){
-    this->dataset_idx += this->minibatch_size;
-    if (this->dataset_idx >= this->dataset_size){
+    if (this->dataset_idx + this->minibatch_size >= this->dataset_size){
         this->dataset_idx = 0;
     }
 
@@ -68,6 +67,7 @@ void DataLoader::write_to_memory(dnnl::memory dst_mem_features, dnnl::memory dst
     std::cout << "Wrote labels\n";
 
     write_to_dnnl_memory(this->curr_batch_labels.data(), dst_mem_labels);
+    this->dataset_idx += this->minibatch_size;
 }
 
 void DataLoader::load_from_file(std::string filename, std::vector<float> &data)
