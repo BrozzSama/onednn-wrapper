@@ -13,9 +13,6 @@ void updateWeights_SGD(dnnl::memory weights,
                    dnnl::engine eng)
 {
 
-    // Create scale for subtraction
-    std::vector<float> scales = {1.f, learning_rate * (-1.f)};
-
     std::vector<dnnl::memory> sub_vector = {weights, diff_weights};
     std::vector<dnnl::memory::desc> sub_vector_md = {sub_vector[0].get_desc(), sub_vector[1].get_desc()};
     
@@ -25,6 +22,10 @@ void updateWeights_SGD(dnnl::memory weights,
     std::cout << "The dimensions of diff weights are: ";
     print_vector(sub_vector_md[1].dims());
     std::cout << "\n";
+
+    // Minibatch gradient descent needs normalization
+    const long minibatch_size = sub_vector_md[0].dims()[0];
+    std::vector<float> scales = {1.f, (learning_rate/minibatch_size) * (-1.f)};
 
     auto weights_update_pd = dnnl::sum::primitive_desc(sub_vector_md[0], scales, sub_vector_md, eng);
 
