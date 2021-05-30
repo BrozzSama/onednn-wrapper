@@ -1,0 +1,12 @@
+{
+    "iterations": 500,
+    "dataset_path": "data/features_skin.txt",
+    "labels_path": "data/label_skin.txt",
+    "loss_filename": "data/losses/skin_loss_gpu.npy",
+    "minibatch_size": 500,
+    "step": 10,
+    "learning_rate": 0.01,
+    "clip_upper": 10000,
+    "clip_lower": -10000,
+    "samples": 245057
+  }

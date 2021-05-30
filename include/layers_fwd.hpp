@@ -20,7 +20,7 @@ int Conv2D(int batch_size, int patch_length,
            dnnl::engine eng)
 {
     // RNG for ALL purposes
-    std::default_random_engine generator;
+    std::default_random_engine generator(155);
     std::normal_distribution<float> norm_dist(0.f,1.f);
 
     std::cout << "Creating convolutional layer!\n";
@@ -143,7 +143,7 @@ int Dense(dnnl::memory::dims src_dims,
 {
 
     // RNG for ALL purposes
-    std::default_random_engine generator(time(NULL));
+    std::default_random_engine generator(155);
     std::normal_distribution<float> norm_dist(0.f,1.f);
 
     // 0,1,2,3 are used to grab the dimension we need from the source dims vector

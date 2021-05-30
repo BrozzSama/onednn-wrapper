@@ -227,6 +227,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         std::vector<float> weights_fc1_test(n_features * fc1_output_size), diff_weights_fc1_test(n_features * fc1_output_size), diff_dst_test(batch*fc1_output_size);
         std::vector<float> weights_fc2_test(fc1_output_size), diff_weights_fc2_test(fc1_output_size);
         std::vector<float> bias_fc1_test(fc1_output_size), bias_fc2_test(fc2_output_size);
+        std::vector<float> diff_bias_fc1_test(fc1_output_size), diff_bias_fc2_test(fc2_output_size);
         
         // Prepare memory that will host src
         std::vector<float> src_test(batch * n_features), dst_test(batch * fc1_output_size);
@@ -281,19 +282,18 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         s.wait();
                         read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
                         read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[clip_loss_back][DNNL_ARG_DST]);
-                        /*
                         read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST]);
                         read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(diff_bias_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_bias][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(diff_bias_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_bias][DNNL_ARG_DST]);
                         read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
-                        */
                         read_from_dnnl_memory(labels_test.data(), labels_memory);
                         read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test.data(), net_fwd_args[fc1][DNNL_ARG_DST]);
-                        /*
                         read_from_dnnl_memory(src_test2.data(), net_fwd_args[fc2][DNNL_ARG_SRC]);
                         read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
                         
@@ -312,16 +312,18 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         print_vector2(weights_fc2_test);
                         std::cout << "FC2 Bias:\n";
                         print_vector2(bias_fc2_test);
+                        std::cout << "Gradient of FC1 bias:\n";
+                        print_vector2(diff_bias_fc1_test);
+                        std::cout << "Gradient of FC2 bias:\n";
+                        print_vector2(diff_bias_fc2_test);
                         std::cout << "Gradient of FC1 weights:\n";
                         print_vector2(diff_weights_fc1_test);
                         std::cout << "Gradient of FC2 weights:\n";
                         print_vector2(diff_weights_fc2_test);
                         print_vector2(diff_dst_test);
-                        */
                         std::cout << "FC1 SRC:\n";
                         print_vector2(labels_test, batch);
                         print_vector2(src_test, batch * dataset_shape[1]);
-                        /*
                         std::cout << "FC1 DST:\n";
                         print_vector2(dst_test);
                         std::cout << "FC2 SRC:\n";
@@ -330,7 +332,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         print_vector2(dst_test2);
                         std::cout << "Sigmoid DST:\n";
                         print_vector2(sigmoid_test2);
-                        */
                         
 
                         loss_history[(int)n_iter/step] = curr_loss;
@@ -340,7 +341,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         }
 
         //std::string loss_filename = "./data/losses/iteration_" + std::to_string(n_iter) + ".npy";  
-        std::string loss_filename = "./data/losses/loss_history.npy";  
+        std::string loss_filename = config_file["loss_filename"];  
         npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, loss_history);
 
         s.wait();
