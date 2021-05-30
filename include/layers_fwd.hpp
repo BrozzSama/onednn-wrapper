@@ -143,7 +143,8 @@ int Dense(dnnl::memory::dims src_dims,
 {
 
     // RNG for ALL purposes
-    std::default_random_engine generator(155);
+    std::default_random_engine generator;
+    generator.seed(155);
     std::normal_distribution<float> norm_dist(0.f,1.f);
 
     // 0,1,2,3 are used to grab the dimension we need from the source dims vector
@@ -202,6 +203,7 @@ int Dense(dnnl::memory::dims src_dims,
     }
     std::cout << "\n";
 
+    std::cout << "Set tag from_conv: \n";
     // If something does not work check here (oihw?)
     dnnl::memory weights_mem_fc;
     if ( from_conv ){
@@ -211,13 +213,15 @@ int Dense(dnnl::memory::dims src_dims,
         weights_mem_fc = dnnl::memory({weights_dims_fc, dt::f32, tag::oi}, eng);
     }
 
+    std::cout << "Write bias to memory: \n";
     write_to_dnnl_memory(fc_bias.data(), bias_mem_fc);
+     std::cout << "Write weights to memory: \n";
     write_to_dnnl_memory(fc_weights.data(), weights_mem_fc);
 
     auto weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::any);
     //auto weights_md_fc = weights_mem_fc.get_desc();
 
-    /*
+    
     std::cout << "Dimensions:\n";
     for(int i=0; i<src_md_fc.dims().size(); i++)
         std::cout << src_md_fc.dims()[i] << " ";
@@ -231,13 +235,14 @@ int Dense(dnnl::memory::dims src_dims,
     for(int i=0; i<dst_md_fc.dims().size(); i++)
         std::cout << dst_md_fc.dims()[i] << " ";
     std::cout << "\n";
-    */
+    
     auto fc_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, src_md_fc,
                                                 weights_md_fc, bias_md_fc, dst_md_fc);
 
     auto fc_pd = dnnl::inner_product_forward::primitive_desc(fc_desc, eng);
     
     // Check if the types are proper
+    std::cout << "Start type checking: \n";
     src_mem_fc = checkType(fc_pd.src_desc(), input, net, net_args, eng);
     weights_mem_fc = checkType(fc_pd.weights_desc(), weights_mem_fc, net, net_args, eng);
     bias_mem_fc = checkType(fc_pd.bias_desc(), bias_mem_fc, net, net_args, eng);
