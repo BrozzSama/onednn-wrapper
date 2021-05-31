@@ -97,6 +97,7 @@ int Dense_back_weights(dnnl::memory diff_dst,
     auto fc_diff_weights_memory = dnnl::memory(dense_fwd[DNNL_ARG_WEIGHTS].get_desc(), eng);
     auto fc_diff_bias_memory = dnnl::memory(dense_fwd[DNNL_ARG_BIAS].get_desc(), eng);
 
+
     // create memory descriptors for f32 convolution data
     auto fc_bwd_src_md = dense_fwd[DNNL_ARG_SRC].get_desc();
     auto fc_diff_weights_md = dense_fwd[DNNL_ARG_WEIGHTS].get_desc();
@@ -106,6 +107,25 @@ int Dense_back_weights(dnnl::memory diff_dst,
     auto fc_diff_dst_md = diff_dst.get_desc();
     auto fc_diff_bias_md = dense_fwd[DNNL_ARG_BIAS].get_desc();
 
+
+    std::vector<float> diff_fc_weights(product(fc_diff_weights_md.dims()));
+    std::vector<float> diff_fc_bias(product(fc_diff_bias_md.dims()));
+    
+    std::cout << "Initializing diff weights: \n";
+    for (int i = 0; i<diff_fc_weights.size(); i++){
+        diff_fc_weights[i] = 0;    
+    }
+    std::cout << "\n";
+
+    std::cout << "Initializing diff bias: \n";
+    for (int i = 0; i<diff_fc_bias.size(); i++){
+        diff_fc_bias[i] = 0;    
+    }
+    std::cout << "\n";
+
+    write_to_dnnl_memory(diff_fc_weights.data(), fc_diff_weights_memory);
+    write_to_dnnl_memory(diff_fc_bias.data(), fc_diff_bias_memory);
+    
     // Recreate forward descriptor (see conv2dback)
 
     auto fc_fwd_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, fc_bwd_src_md,

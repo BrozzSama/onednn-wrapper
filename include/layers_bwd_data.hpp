@@ -13,6 +13,7 @@ int Conv2D_back_data(dnnl::memory diff_dst,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
 {
+
     auto conv_diff_src_md = conv2d_fwd[DNNL_ARG_SRC].get_desc();
     auto conv_diff_src_memory = dnnl::memory(conv_diff_src_md, eng);
     
@@ -87,6 +88,7 @@ int Dense_back_data(dnnl::memory diff_dst,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng){
 
+
     // INPUT: diff_dst, weights, bias OUTPUT: diff_src
 
     // Create memory area for backward pass (get types from dense_fwd)
@@ -101,6 +103,18 @@ int Dense_back_data(dnnl::memory diff_dst,
     auto fc_diff_dst_md = diff_dst.get_desc();
     auto fc_bias_md = dense_fwd[DNNL_ARG_BIAS].get_desc();
     auto fc_diff_src_md = fc_diff_src_memory.get_desc();
+
+
+    // Initialize diff_src and diff_dst to zero
+    std::vector<float> diff_fc_src(product(fc_diff_src_md.dims()));
+    
+    std::cout << "Initializing diff src: \n";
+    for (int i = 0; i<diff_fc_src.size(); i++){
+        diff_fc_src[i] = 0;    
+    }
+    std::cout << "\n";
+
+    write_to_dnnl_memory(diff_fc_src.data(), fc_diff_src_memory);
 
     // Recreate forward descriptor (see conv2dback)
 
