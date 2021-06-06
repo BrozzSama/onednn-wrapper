@@ -1,12 +1,17 @@
 {
-    "iterations": 500,
+    "iterations": 10000,
     "dataset_path": "data/features_skin.txt",
     "labels_path": "data/label_skin.txt",
+    "dataset_path_val": "data/features_skin_val.txt",
+    "labels_path_val": "data/label_skin_val.txt",
     "loss_filename": "data/losses/skin_loss_cpu.npy",
+    "loss_inf_filename": "data/losses/skin_loss_cpu_inf.npy", 
+    "val_predicted_filename": "data/val_predicted.npy", 
+    "samples_val": 61265,
     "minibatch_size": 500,
-    "step": 10,
+    "step": 100,
     "learning_rate": 0.01,
     "clip_upper": 10000,
     "clip_lower": -10000,
-    "samples": 245057
+    "samples": 183792
   }
