@@ -77,28 +77,34 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         stream s(eng);
 
         // MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)
-        const unsigned long samples = config_file["samples"];
+        const long samples = config_file["samples"];
+        const long samples_val = config_file["samples_val"];
         const long batch = config_file["minibatch_size"];
+
         // Load dataset
         auto dataset_path = config_file["dataset_path"];
         auto labels_path = config_file["labels_path"];
 
+        auto dataset_path_val = config_file["dataset_path_val"];
+        auto labels_path_val = config_file["labels_path_val"];
 
-
-        std::vector<unsigned long> dataset_shape = {samples, 3};      //Skin dataset
-        std::vector<float> dataset(dataset_shape[0]*dataset_shape[1]);
+        std::vector<long> dataset_shape = {samples, 3};      //Skin dataset
+        std::vector<long> dataset_shape_val = {samples_val, 3};      //Skin dataset
 
         // Data loader 
 
         DataLoader skin_data(dataset_path, labels_path, samples, batch, dataset_shape, eng);
         std::cout << "Dataloader instantiated\n";
 
+        DataLoader skin_data_val(dataset_path_val, labels_path_val, samples_val, samples_val, dataset_shape_val, eng);
+        std::cout << "Dataloader instantiated\n";
+
         using tag = memory::format_tag;
         using dt = memory::data_type;
 
         // Vector of primitives and their execute arguments
-        std::vector<primitive> net_fwd, net_bwd_data, net_bwd_weights, net_sgd;
-        std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
+        std::vector<primitive> net_fwd, net_fwd_inf, net_bwd_data, net_bwd_weights, net_sgd;
+        std::vector<std::unordered_map<int, memory>> net_fwd_args, net_fwd_inf_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
 
         const int n_features = dataset_shape[1];
         const float learning_rate = config_file["learning_rate"];
@@ -113,8 +119,14 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         auto input_memory = memory({{input_dim}, dt::f32, tag::nc}, eng);
         auto labels_memory = memory({{labels_dim}, dt::f32, tag::nc}, eng);
 
+        memory::dims input_dim_val = {samples_val, n_features};
+        memory::dims labels_dim_val = {samples_val, 1};
+        auto input_memory_val = memory({{input_dim_val}, dt::f32, tag::nc}, eng);
+        auto labels_memory_val = memory({{labels_dim_val}, dt::f32, tag::nc}, eng);
+
         std::cout << "Writing first batch to memory\n";
         skin_data.write_to_memory(input_memory, labels_memory);
+        skin_data_val.write_to_memory(input_memory_val, labels_memory_val);
 
         // PnetCLS: Fully Connected 1
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
@@ -142,10 +154,38 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         std::cout << "I created the second dense layer!\n";
 
-        // L2 loss
+        // BCE loss
 
-        //int loss = L2_Loss(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_fwd, net_fwd_args, eng);
         int loss = binaryCrossEntropyLoss(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_fwd, net_fwd_args, eng);
+
+        // Inference
+
+        // PnetCLS: Fully Connected 1
+        // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
+
+        memory::dims fc1_src_dims_inf = {samples_val, n_features};
+        int fc1_inf = Dense(fc1_src_dims_inf, fc1_output_size, 
+                        input_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
+        int relu1_inf = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_inf_args[fc1_inf][DNNL_ARG_DST],
+                            net_fwd_inf, net_fwd_inf_args, eng);
+
+        std::cout << "I created the first dense layer!\n";
+
+        // PnetCLS: Fully Connected 2
+        // {batch, fc1_output_size} -> {batch, 1}
+
+        memory::dims fc2_src_dims_inf = {samples_val, fc1_output_size};
+        int fc2_inf = Dense(fc2_src_dims_inf, fc2_output_size, 
+                        net_fwd_inf_args[relu1_inf][DNNL_ARG_DST], net_fwd_inf, net_fwd_inf_args, eng);
+                        
+        int sigmoid1_inf = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_inf_args[fc2_inf][DNNL_ARG_DST],
+                            net_fwd_inf, net_fwd_inf_args, eng);
+
+        std::cout << "I created the second dense layer!\n";
+
+        // BCE loss
+
+        int loss_inf = binaryCrossEntropyLoss(net_fwd_inf_args[sigmoid1_inf][DNNL_ARG_DST], labels_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Data)-------------------------------------
@@ -192,10 +232,15 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         updateWeights_SGD(net_fwd_args[fc1][DNNL_ARG_WEIGHTS], 
                    net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST],
                    learning_rate, net_sgd, net_sgd_args, eng);
+        // Copy weights to the inference network
+        Reorder(net_fwd_args[fc1][DNNL_ARG_WEIGHTS], net_fwd_inf_args[fc1_inf][DNNL_ARG_WEIGHTS],
+                   net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Weight update FC2\n";
         updateWeights_SGD(net_fwd_args[fc2][DNNL_ARG_WEIGHTS], 
                    net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST],
                    learning_rate, net_sgd, net_sgd_args, eng);
+        Reorder(net_fwd_args[fc2][DNNL_ARG_WEIGHTS], net_fwd_inf_args[fc2_inf][DNNL_ARG_WEIGHTS],
+                   net_bwd_weights, net_bwd_weights_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Bias update -------------------------------------
@@ -203,10 +248,14 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         updateWeights_SGD(net_fwd_args[fc1][DNNL_ARG_BIAS], 
                    net_bwd_weights_args[clip_fc1_back_bias][DNNL_ARG_DST],
                    learning_rate, net_sgd, net_sgd_args, eng);
+        Reorder(net_fwd_args[fc1][DNNL_ARG_BIAS], net_fwd_inf_args[fc1_inf][DNNL_ARG_BIAS],
+                   net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Bias update FC2\n";
         updateWeights_SGD(net_fwd_args[fc2][DNNL_ARG_BIAS], 
                    net_bwd_weights_args[clip_fc2_back_bias][DNNL_ARG_DST],
                    learning_rate, net_sgd, net_sgd_args, eng);
+        Reorder(net_fwd_args[fc2][DNNL_ARG_BIAS], net_fwd_inf_args[fc2_inf][DNNL_ARG_BIAS],
+                   net_bwd_weights, net_bwd_weights_args, eng);
 
         // didn't we forget anything?
         assert(net_fwd.size() == net_fwd_args.size() && "something is missing");
@@ -219,8 +268,9 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         // Prepare memory that will host loss
         std::vector<float> curr_loss_diff(batch);
-        float curr_loss;
+        float curr_loss, curr_loss_inf;
         std::vector<float> loss_history((int)max_iter/step);
+        std::vector<float> loss_inf_history((int)max_iter/step);
 
         // Prepare memory that will host weights and biases
         std::vector<float> weight_test(128);
@@ -237,10 +287,13 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         
         // Prepare memory that will host final output
         std::vector<float> sigmoid_test2(batch);
+        std::vector<float> output_val(samples_val);
+
 
         //unsigned long batch_size = batch;
         unsigned long batch_size = max_iter/step;
         const unsigned long loss_dim [] = {batch_size};
+        const unsigned long output_val_dim [] = {config_file["samples_val"]};
 
         // execute
         while (n_iter < max_iter)
@@ -288,17 +341,22 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         net_sgd.at(i).execute(s, net_sgd_args.at(i));
 
                 if (n_iter % step == 0){  
+                        // Execute inference
+                        for (size_t i = 0; i < net_fwd_inf.size(); ++i)
+                                net_fwd_inf.at(i).execute(s, net_fwd_inf_args.at(i));
+
                         s.wait();
                         read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[clip_loss_back][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(&curr_loss_inf, net_fwd_inf_args[loss_inf][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[loss_back][DNNL_ARG_DST]);
                         read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
                         read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
                         read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
-                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_SRC]);
-                        read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_SRC]);
-                        read_from_dnnl_memory(diff_bias_fc1_test.data(), net_bwd_weights_args[clip_fc1_back_bias][DNNL_ARG_SRC]);
-                        read_from_dnnl_memory(diff_bias_fc2_test.data(), net_bwd_weights_args[clip_fc2_back_bias][DNNL_ARG_SRC]);
+                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
+                        read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
+                        read_from_dnnl_memory(diff_bias_fc1_test.data(), net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_BIAS]);
+                        read_from_dnnl_memory(diff_bias_fc2_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_BIAS]);
                         read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
                         read_from_dnnl_memory(labels_test.data(), labels_memory);
                         read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
@@ -344,6 +402,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         
 
                         loss_history[(int)n_iter/step] = curr_loss;
+                        loss_inf_history[(int)n_iter/step] = curr_loss_inf;
                 }
 
                 // Change data
@@ -352,10 +411,18 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                 n_iter++;
         }
 
+        read_from_dnnl_memory(output_val.data(), net_fwd_inf_args[sigmoid1][DNNL_ARG_DST]);
+
+        s.wait();
+
         std::string loss_filename = config_file["loss_filename"];  
         npy::SaveArrayAsNumpy(loss_filename, false, 1, loss_dim, loss_history);
 
-        s.wait();
+        std::string loss_inf_filename = config_file["loss_inf_filename"];  
+        npy::SaveArrayAsNumpy(loss_inf_filename, false, 1, loss_dim, loss_inf_history);
+
+        std::string val_predicted_filename = config_file["val_predicted_filename"];  
+        npy::SaveArrayAsNumpy(val_predicted_filename, false, 1, output_val_dim, output_val);
 }
 
 int main(int argc, char **argv)
