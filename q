@@ -4,9 +4,10 @@
 #
 # Version: 0.5
 #========================================
-#property='gpu'
+property='i9-10920x'
 #property='clx'
 #property='skx'
+#property='dual_gpu'
 if [ -z "$property" ]; then
     property='gpu'
 fi
@@ -36,6 +37,6 @@ else
 			break
 		fi
 	done
-	cat $script.o*
-	cat $script.e*
+	#cat $script.o*
+	#cat $script.e*
 fi
