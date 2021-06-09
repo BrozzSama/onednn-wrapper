@@ -1,4 +1,4 @@
-#include "oneapi/dnnl/dnnl.hpp"
+#include "util.h"
 
 // checkType syntax is:
 // (md of primitive ie. the format supported by the primitive running on eng, memory with type that needs to be checked,
@@ -29,7 +29,7 @@ void print_vector(std::vector<dnnl::memory::dim> const &input)
     std::cout << "\n";
 }
 
-void print_vector2(std::vector<float> input, int user_limit=100)
+void print_vector2(std::vector<float> input, int user_limit)
 {
     int limit;
     if (input.size() > user_limit)

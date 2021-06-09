@@ -1,9 +1,4 @@
-#include "oneapi/dnnl/dnnl.hpp"
-
-#include <iostream>
-#include <stdexcept>
-#include <cmath>
-#include <random>
+#include "../include/weights_update.h"
 
 void updateWeights_SGD(dnnl::memory weights, 
                    dnnl::memory diff_weights,
@@ -15,13 +10,6 @@ void updateWeights_SGD(dnnl::memory weights,
 
     std::vector<dnnl::memory> sub_vector = {weights, diff_weights};
     std::vector<dnnl::memory::desc> sub_vector_md = {sub_vector[0].get_desc(), sub_vector[1].get_desc()};
-    
-    std::cout << "The dimensions of weights are: ";
-    print_vector(sub_vector_md[0].dims());
-    std::cout << "\n";
-    std::cout << "The dimensions of diff weights are: ";
-    print_vector(sub_vector_md[1].dims());
-    std::cout << "\n";
 
     // Minibatch gradient descent needs normalization
     const long minibatch_size = sub_vector_md[0].dims()[0];

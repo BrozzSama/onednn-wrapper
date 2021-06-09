@@ -37,7 +37,7 @@
 
 #include "../include/npy.hpp"
 #include "../include/util.hpp"
-#include "../include/layers_fwd.hpp"
+#include "../include/layers_fwd.h"
 #include "../include/layers_bwd_data.hpp"
 #include "../include/layers_bwd_weights.hpp"
 #include "../include/losses.hpp"
@@ -156,7 +156,7 @@ void simple_net(engine::kind engine_kind)
         int fc1 = Dense(fc1_src_dims, fc1_output_size, 
                         net_fwd_args[relu2][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
 
-        int relu3 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[fc1][DNNL_ARG_DST],
+        int relu3 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1.arg_dst,
                             net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the first dense layer!\n";
@@ -169,7 +169,7 @@ void simple_net(engine::kind engine_kind)
         int fc2 = Dense(fc2_src_dims, fc2_output_size, 
                         net_fwd_args[relu3][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
                         
-        int sigmoid1 = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[fc2][DNNL_ARG_DST],
+        int sigmoid1 = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2.arg_dst,
                             net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the second dense layer!\n";

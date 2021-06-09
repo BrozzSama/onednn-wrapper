@@ -24,6 +24,9 @@ endif()
 
 project (DNNL_EXAMPLES)
 
+add_subdirectory(layers)
+add_subdirectory(misc)
+
 set(DNNL_CPU_RUNTIME "SYCL")
 set(DNNL_GPU_RUNTIME "SYCL")
 
@@ -130,8 +133,15 @@ endfunction()
 #   srcs -- list of source, if many must be enclosed with ""
 #   test -- "test" to mark executable as a test, "" otherwise
 function(register_example name srcs test)
+
+    include_directories(${DNNL_EXAMPLES_SOURCE_DIR}/layers/include)
+    include_directories(${DNNL_EXAMPLES_SOURCE_DIR}/misc/include)
+
     add_executable(${name} ${srcs})
     target_link_libraries(${name} DNNL::dnnl ${LIBM})
+    target_link_libraries(${name} layers ${LIBM})
+    target_link_libraries(${name} misc ${LIBM})
+    
     if("x${test}" STREQUAL "xtest")
         add_test(${name} ${name})
         maybe_configure_test("${example_name}" TEST)

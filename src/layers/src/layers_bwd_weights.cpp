@@ -1,12 +1,4 @@
-#include "oneapi/dnnl/dnnl.hpp"
-
-#include <iostream>
-#include <stdexcept>
-#include <cmath>
-#include <random>
-
-using tag = dnnl::memory::format_tag;
-using dt = dnnl::memory::data_type;
+#include "layers_bwd_weights.h"
 
 int Conv2D_back_weights(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
@@ -85,8 +77,8 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
     return net.size() - 1;
 }
 
-int Dense_back_weights(dnnl::memory diff_dst,
-           std::unordered_map<int, dnnl::memory> dense_fwd,
+Dense_back_weights::Dense_back_weights(dnnl::memory diff_dst,
+           Dense dense_fwd,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng)
@@ -94,18 +86,18 @@ int Dense_back_weights(dnnl::memory diff_dst,
     // INPUT: diff_dst (ie. diff_src of previous layer), src OUTPUT: diff_weights, diff_bias
 
     // Create memory area for backward pass (get types from dense_fwd)
-    auto fc_diff_weights_memory = dnnl::memory(dense_fwd[DNNL_ARG_WEIGHTS].get_desc(), eng);
-    auto fc_diff_bias_memory = dnnl::memory(dense_fwd[DNNL_ARG_BIAS].get_desc(), eng);
+    auto fc_diff_weights_memory = dnnl::memory(dense_fwd.arg_weights.get_desc(), eng);
+    auto fc_diff_bias_memory = dnnl::memory(dense_fwd.arg_bias.get_desc(), eng);
 
 
     // create memory descriptors for f32 convolution data
-    auto fc_bwd_src_md = dense_fwd[DNNL_ARG_SRC].get_desc();
-    auto fc_diff_weights_md = dense_fwd[DNNL_ARG_WEIGHTS].get_desc();
+    auto fc_bwd_src_md = dense_fwd.arg_src.get_desc();
+    auto fc_diff_weights_md = dense_fwd.arg_weights.get_desc();
 
     // This is only used to recreate fwd primitive
-    auto fc_fwd_dst_md = dense_fwd[DNNL_ARG_DST].get_desc();
+    auto fc_fwd_dst_md = dense_fwd.arg_dst.get_desc();
     auto fc_diff_dst_md = diff_dst.get_desc();
-    auto fc_diff_bias_md = dense_fwd[DNNL_ARG_BIAS].get_desc();
+    auto fc_diff_bias_md = dense_fwd.arg_bias.get_desc();
 
 
     std::vector<float> diff_fc_weights(product(fc_diff_weights_md.dims()));
@@ -145,7 +137,7 @@ int Dense_back_weights(dnnl::memory diff_dst,
     std::cout << "Allocating source memory\n";
     auto fc_bwd_src_memory = dnnl::memory(fc_bwd_src_md, eng);
     std::cout << "Checking memory type src \n";
-    fc_bwd_src_memory = checkType(fc_bwd_pd.src_desc(), dense_fwd[DNNL_ARG_SRC], net, net_args, eng);
+    fc_bwd_src_memory = checkType(fc_bwd_pd.src_desc(), dense_fwd.arg_src, net, net_args, eng);
     std::cout << "Checking memory type dst\n";
     std::cout << "The size of net_back is: " << net_args.size() << "\n";
 
@@ -159,6 +151,12 @@ int Dense_back_weights(dnnl::memory diff_dst,
     }
 
     std::cout << "Adding to net\n";
+
+    arg_src = fc_bwd_src_memory;
+    arg_diff_dst = fc_diff_dst_memory;
+    arg_diff_weights = fc_diff_weights_memory;
+    arg_diff_bias = fc_diff_bias_memory;
+
     net.push_back(dnnl::inner_product_backward_weights(fc_bwd_pd));
     net_args.push_back({{DNNL_ARG_SRC, fc_bwd_src_memory},
                         {DNNL_ARG_DIFF_DST, fc_diff_dst_memory},
@@ -166,7 +164,5 @@ int Dense_back_weights(dnnl::memory diff_dst,
                         // reordering needed done in a similar fashion to cnn_training_f32.cpp
                         {DNNL_ARG_DIFF_WEIGHTS, fc_diff_weights_memory},
                         {DNNL_ARG_DIFF_BIAS, fc_diff_bias_memory}});
-    
-    // Return index to locate the layer
-    return net.size() - 1;
+
 }

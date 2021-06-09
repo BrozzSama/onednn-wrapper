@@ -1,13 +1,5 @@
-#include "oneapi/dnnl/dnnl.hpp"
+#include "../include/layers_fwd.h"
 
-#include <iostream>
-#include <stdexcept>
-#include <cmath>
-#include <random>
-#include <time.h>
-
-using tag = dnnl::memory::format_tag;
-using dt = dnnl::memory::data_type;
 
 // Conv2D, only Glorot initializer implemented
 int Conv2D(int batch_size, int patch_length,
@@ -134,7 +126,8 @@ int Conv2D(int batch_size, int patch_length,
     return net.size() - 1;
 }
 
-int Dense(dnnl::memory::dims src_dims, 
+
+Dense::Dense(dnnl::memory::dims src_dims, 
           int fc_output_size,
           dnnl::memory input,
           std::vector<dnnl::primitive> &net,
@@ -253,61 +246,17 @@ int Dense(dnnl::memory::dims src_dims,
     // Create memory for output (no check needed)
     auto conv_dst_memory = dnnl::memory(fc_pd.dst_desc(), eng);
 
+    // Set dnnl::memory pointers inside class
+    arg_src = src_mem_fc;
+    arg_dst = dst_mem_fc;
+    arg_weights = weights_mem_fc;
+    arg_bias = bias_mem_fc;
+
     // Append primitive to network vector
     net.push_back(dnnl::inner_product_forward(fc_pd));
     net_args.push_back({{DNNL_ARG_SRC, src_mem_fc},
                         {DNNL_ARG_WEIGHTS, weights_mem_fc},
                         {DNNL_ARG_BIAS, bias_mem_fc},
                         {DNNL_ARG_DST, dst_mem_fc}});
-    // Return index to locate the layer
-    return net.size() - 1;
 }
 
-int Eltwise(dnnl::algorithm activation,
-          float alpha,
-          float beta,
-          dnnl::memory input,
-          std::vector<dnnl::primitive> &net,
-          std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
-          dnnl::engine eng)
-{
-
-    auto src_md = input.get_desc();
-
-    /*dnnl::memory::dims ciao(src_md.dims().size());
-
-    for (int i = 0; i<ciao.size(); i++){
-        ciao[i] = src_md.dims()[i];
-    }*/
-
-    //auto dst_md = dnnl::memory::desc(ciao, dt::f32, tag::any);
-
-    auto dst_mem = dnnl::memory(src_md, eng);
-    auto dst_md =  dst_mem.get_desc();
-
-    std::cout << "Memory allocated\n";
-
-    auto eltwise_desc = dnnl::eltwise_forward::desc(dnnl::prop_kind::forward_training, activation,
-                                                dst_md, alpha, beta);
-    auto eltwise_pd = dnnl::eltwise_forward::primitive_desc(eltwise_desc, eng);
-
-    net.push_back(dnnl::eltwise_forward(eltwise_pd));
-    net_args.push_back({{DNNL_ARG_SRC, input},
-                        {DNNL_ARG_DST, dst_mem}});
-
-    return net.size() - 1;
-}
-
-/*
-
-postOp(layer){
-
-    do glorot initializatoin in user memory
-
-    Do this for every weight/bias couple, otherwise you are not writing anything
-    auto conv_user_src_memory = dnnl::memory({{conv_src_tz}, dt::f32, tag::nchw}, eng);
-    write_to_dnnl_dnnl::memory(input.data(), conv_user_src_memory);
-
-}
-
-*/

@@ -1,9 +1,4 @@
-#include "oneapi/dnnl/dnnl.hpp"
-
-#include <iostream>
-#include <stdexcept>
-#include <cmath>
-#include <random>
+#include "../include/losses.h"
 
 int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true, 
             std::vector<dnnl::primitive> &net,

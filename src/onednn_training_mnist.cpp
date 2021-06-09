@@ -79,13 +79,13 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         // MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)
         //unsigned long samples = 245057;
-        const unsigned long samples = config_file["samples"];
+        const long samples = config_file["samples"];
         const long batch = config_file["minibatch_size"];
         // Load dataset
         auto dataset_path = config_file["dataset_path"];
         auto labels_path = config_file["labels_path"];
 
-        std::vector<unsigned long> dataset_shape = {samples, 28, 28};      //MNIST dataset
+        std::vector<long> dataset_shape = {samples, 28, 28};      //MNIST dataset
 
         // Data loader 
 
@@ -142,7 +142,9 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
         //memory::dims fc1_src_dims = {batch, n_features};
-        memory::dims fc1_src_dims = {batch, n_kernels, patch_size, patch_size};
+        int conv_o_h = net_fwd_args[conv1][DNNL_ARG_DST].get_desc().dims()[1];
+        int conv_o_w = net_fwd_args[conv1][DNNL_ARG_DST].get_desc().dims()[2];
+        memory::dims fc1_src_dims = {batch, n_kernels, conv_o_h, conv_o_w};
         int fc1_output_size = 128;
         int fc1 = Dense(fc1_src_dims, fc1_output_size, 
                         net_fwd_args[relu0][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);

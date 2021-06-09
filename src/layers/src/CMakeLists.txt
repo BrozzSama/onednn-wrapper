@@ -1,0 +1,5 @@
+find_package(dnnl CONFIG REQUIRED HINTS ${DNNLROOT} ${ONEAPI_CMAKE_CONFIG_HINT})
+include_directories(${DNNL_EXAMPLES_SOURCE_DIR}/layers/include)
+include_directories(${DNNL_EXAMPLES_SOURCE_DIR}/misc/include)
+add_library(layers layers_fwd.cpp layers_bwd_data.cpp layers_bwd_weights.cpp primitive_wrappers.cpp losses.cpp weights_update.cpp)
+target_link_libraries(layers DNNL::dnnl)

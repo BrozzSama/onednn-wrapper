@@ -56,17 +56,7 @@
 #define PRAGMA_OMP_PARALLEL_FOR_COLLAPSE(n)
 #endif
 
-dnnl::engine::kind validate_engine_kind(dnnl::engine::kind akind) {
-    // Checking if a GPU exists on the machine
-    if (akind == dnnl::engine::kind::gpu) {
-        if (dnnl::engine::get_count(dnnl::engine::kind::gpu) == 0) {
-            std::cout << "Application couldn't find GPU, please run with CPU "
-                         "instead.\n";
-            exit(0);
-        }
-    }
-    return akind;
-}
+dnnl::engine::kind validate_engine_kind(dnnl::engine::kind akind);
 
 // Exception class to indicate that the example uses a feature that is not
 // available on the current systems. It is not treated as an error then, but
@@ -131,7 +121,7 @@ inline int handle_example_errors(
 }
 
 inline dnnl::engine::kind parse_engine_kind(
-        int argc, char **argv, int extra_args = 0) {
+        int argc, char **argv, int extra_args) {
     // Returns default engine kind, i.e. CPU, if none given
     if (argc == 1) {
         return validate_engine_kind(dnnl::engine::kind::cpu);
@@ -291,5 +281,6 @@ inline void write_to_dnnl_memory(void *handle, dnnl::memory &mem) {
 
     assert(!"not expected");
 }
+
 
 #endif

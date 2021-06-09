@@ -33,18 +33,18 @@
 
 #include "oneapi/dnnl/dnnl.hpp"
 
-#include "example_utils.hpp"
+#include "intel_utils.h"
 
-#include "../include/npy.hpp"
-#include "../include/util.hpp"
-#include "../include/layers_fwd.hpp"
-#include "../include/layers_bwd_data.hpp"
-#include "../include/layers_bwd_weights.hpp"
-#include "../include/losses.hpp"
-#include "../include/weights_update.hpp"
-#include "../include/primitive_wrappers.hpp"
-#include "../include/data_loader.hpp"
-#include "../include/json.hpp"
+#include "misc/include/npy.hpp"
+#include "misc/include/util.h"
+#include "layers/include/layers_fwd.h"
+#include "layers/include/layers_bwd_data.h"
+#include "layers/include/layers_bwd_weights.h"
+#include "layers/include/losses.h"
+#include "layers/include/weights_update.h"
+#include "layers/include/primitive_wrappers.h"
+#include "misc/include/data_loader.h"
+#include "misc/include/json.hpp"
 
 using namespace dnnl;
 
@@ -109,10 +109,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         const int n_features = dataset_shape[1];
         const float learning_rate = config_file["learning_rate"];
 
-        // Declare clipping parameters
-        float clip_upper = config_file["clip_upper"];
-        float clip_lower = config_file["clip_lower"];
-
         // Load inputs inside engine
         memory::dims input_dim = {batch, n_features};
         memory::dims labels_dim = {batch, 1};
@@ -133,10 +129,10 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         memory::dims fc1_src_dims = {batch, n_features};
         int fc1_output_size = 5;
-        int fc1 = Dense(fc1_src_dims, fc1_output_size, 
+        Dense fc1(fc1_src_dims, fc1_output_size, 
                         input_memory, net_fwd, net_fwd_args, eng);
 
-        int relu1 = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[fc1][DNNL_ARG_DST],
+        Eltwise relu1(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1.arg_dst,
                             net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the first dense layer!\n";
@@ -146,17 +142,17 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         memory::dims fc2_src_dims = {batch, fc1_output_size};
         int fc2_output_size = 1;
-        int fc2 = Dense(fc2_src_dims, fc2_output_size, 
-                        net_fwd_args[relu1][DNNL_ARG_DST], net_fwd, net_fwd_args, eng);
+        Dense fc2(fc2_src_dims, fc2_output_size, 
+                        relu1.arg_dst, net_fwd, net_fwd_args, eng);
                         
-        int sigmoid1 = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[fc2][DNNL_ARG_DST],
+        Eltwise sigmoid1 (dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2.arg_dst,
                             net_fwd, net_fwd_args, eng);
 
         std::cout << "I created the second dense layer!\n";
 
         // BCE loss
 
-        int loss = binaryCrossEntropyLoss(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_fwd, net_fwd_args, eng);
+        int loss = binaryCrossEntropyLoss(sigmoid1.arg_dst, labels_memory, net_fwd, net_fwd_args, eng);
 
         // Inference
 
@@ -164,9 +160,9 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
         memory::dims fc1_src_dims_inf = {samples_val, n_features};
-        int fc1_inf = Dense(fc1_src_dims_inf, fc1_output_size, 
+        Dense fc1_inf(fc1_src_dims_inf, fc1_output_size, 
                         input_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
-        int relu1_inf = Eltwise(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_inf_args[fc1_inf][DNNL_ARG_DST],
+        Eltwise relu1_inf(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1_inf.arg_dst,
                             net_fwd_inf, net_fwd_inf_args, eng);
 
         std::cout << "I created the first dense layer!\n";
@@ -175,86 +171,69 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // {batch, fc1_output_size} -> {batch, 1}
 
         memory::dims fc2_src_dims_inf = {samples_val, fc1_output_size};
-        int fc2_inf = Dense(fc2_src_dims_inf, fc2_output_size, 
-                        net_fwd_inf_args[relu1_inf][DNNL_ARG_DST], net_fwd_inf, net_fwd_inf_args, eng);
+        Dense fc2_inf(fc2_src_dims_inf, fc2_output_size, 
+                        relu1_inf.arg_dst, net_fwd_inf, net_fwd_inf_args, eng);
                         
-        int sigmoid1_inf = Eltwise(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_inf_args[fc2_inf][DNNL_ARG_DST],
+        Eltwise sigmoid1_inf(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2_inf.arg_dst,
                             net_fwd_inf, net_fwd_inf_args, eng);
 
         std::cout << "I created the second dense layer!\n";
 
         // BCE loss
 
-        int loss_inf = binaryCrossEntropyLoss(net_fwd_inf_args[sigmoid1_inf][DNNL_ARG_DST], labels_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
+        int loss_inf = binaryCrossEntropyLoss(sigmoid1_inf.arg_dst, labels_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Data)-------------------------------------
 
         std::cout << "Creating backward Loss" << "\n";
         //int loss_back = L2_Loss_back(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_bwd_data, net_bwd_data_args, eng);
-        int loss_back = binaryCrossEntropyLoss_back(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_bwd_data, net_bwd_data_args, eng);
-        std::cout << "Creating clip\n";
-        int clip_loss_back = Clip(net_bwd_data_args[loss_back][DNNL_ARG_DST], clip_upper, clip_lower,
-                                  net_bwd_data, net_bwd_data_args, eng);
-        std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
-        int sigmoid1_back = Eltwise_back(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, net_fwd_args[sigmoid1], 
-                                         net_bwd_data_args[clip_loss_back][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
-        int clip_sigmoid1_back = Clip(net_bwd_data_args[sigmoid1_back][DNNL_ARG_DIFF_SRC], clip_upper, clip_lower,
-                                  net_bwd_data, net_bwd_data_args, eng);
-        int fc2_back_data = Dense_back_data(net_bwd_data_args[clip_sigmoid1_back][DNNL_ARG_DST], net_fwd_args[fc2], net_bwd_data, net_bwd_data_args, eng);
-        int clip_fc2_back_data = Clip(net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_SRC], clip_upper, clip_lower,
-                                  net_bwd_data, net_bwd_data_args, eng);
-        int relu1_back_data = Eltwise_back(dnnl::algorithm::eltwise_relu, 0.f, 0.f, net_fwd_args[relu1], 
-                                         net_bwd_data_args[clip_fc2_back_data][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
-        std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
-        int fc1_back_data = Dense_back_data(net_bwd_data_args[relu1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], net_bwd_data, net_bwd_data_args, eng);
-        int clip_fc1_back_data = Clip(net_bwd_data_args[fc1_back_data][DNNL_ARG_DIFF_SRC], clip_upper, clip_lower,
-                                  net_bwd_data, net_bwd_data_args, eng);
+        int loss_back = binaryCrossEntropyLoss_back(sigmoid1.arg_dst, labels_memory, net_bwd_data, net_bwd_data_args, eng);
+        std::cout << "Creating the second Dense layer (back)\n"; 
+        Eltwise_back sigmoid1_back_data(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, sigmoid1, 
+                                         net_bwd_data_args[loss_back][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
+        Dense_back_data fc2_back_data(sigmoid1_back_data.arg_diff_src, fc2, net_bwd_data, net_bwd_data_args, eng);
+        Eltwise_back relu1_back_data(dnnl::algorithm::eltwise_relu, 0.f, 0.f, relu1, 
+                                         fc2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
+        std::cout << "Creating the first Dense layer (back)\n"; 
+        Dense_back_data fc1_back_data(relu1_back_data.arg_diff_src, fc1, net_bwd_data, net_bwd_data_args, eng);
+
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Weights)-------------------------------------
-        std::cout << "Creating the second Dense layer (back) using forward index: " << fc2 << "\n"; 
-        int fc2_back_weights = Dense_back_weights(net_bwd_data_args[clip_sigmoid1_back][DNNL_ARG_DST], net_fwd_args[fc2], net_bwd_weights, net_bwd_weights_args, eng);
-        std::cout << "Creating Clip\n";
-        int clip_fc2_back_weights = Clip(net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS], clip_upper, clip_lower,
-                                  net_bwd_weights, net_bwd_weights_args, eng);
-        int clip_fc2_back_bias = Clip(net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_BIAS], clip_upper, clip_lower,
-                                  net_bwd_weights, net_bwd_weights_args, eng);
-        std::cout << "Creating the first Dense layer (back) using forward index: " << fc1 << "\n"; 
-        int fc1_back_weights = Dense_back_weights(net_bwd_data_args[relu1_back_data][DNNL_ARG_DIFF_SRC], net_fwd_args[fc1], net_bwd_weights, net_bwd_weights_args, eng);
-        int clip_fc1_back_weights = Clip(net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_WEIGHTS], clip_upper, clip_lower,
-                                  net_bwd_weights, net_bwd_weights_args, eng);
-        int clip_fc1_back_bias = Clip(net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_BIAS], clip_upper, clip_lower,
-                                  net_bwd_weights, net_bwd_weights_args, eng);
+        std::cout << "Creating the second Dense layer (back)\n"; 
+        Dense_back_weights fc2_back_weights(sigmoid1_back_data.arg_diff_src, fc2, net_bwd_weights, net_bwd_weights_args, eng);
+        std::cout << "Creating the first Dense layer (back)\n"; 
+        Dense_back_weights fc1_back_weights(relu1_back_data.arg_diff_src, fc1, net_bwd_weights, net_bwd_weights_args, eng);
         //-----------------------------------------------------------------------
         //----------------- Weights update -------------------------------------
 
         std::cout << "Weight update FC1\n";
-        updateWeights_SGD(net_fwd_args[fc1][DNNL_ARG_WEIGHTS], 
-                   net_bwd_weights_args[clip_fc1_back_weights][DNNL_ARG_DST],
+        updateWeights_SGD(fc1.arg_weights, 
+                   fc1_back_weights.arg_diff_weights,
                    learning_rate, net_sgd, net_sgd_args, eng);
         // Copy weights to the inference network
-        Reorder(net_fwd_args[fc1][DNNL_ARG_WEIGHTS], net_fwd_inf_args[fc1_inf][DNNL_ARG_WEIGHTS],
+        Reorder(fc1.arg_weights, fc1_inf.arg_weights,
                    net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Weight update FC2\n";
-        updateWeights_SGD(net_fwd_args[fc2][DNNL_ARG_WEIGHTS], 
-                   net_bwd_weights_args[clip_fc2_back_weights][DNNL_ARG_DST],
+        updateWeights_SGD(fc2.arg_weights, 
+                   fc2_back_weights.arg_diff_weights,
                    learning_rate, net_sgd, net_sgd_args, eng);
-        Reorder(net_fwd_args[fc2][DNNL_ARG_WEIGHTS], net_fwd_inf_args[fc2_inf][DNNL_ARG_WEIGHTS],
+        Reorder(fc2.arg_weights, fc2_inf.arg_weights,
                    net_bwd_weights, net_bwd_weights_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Bias update -------------------------------------
         std::cout << "Bias update FC1\n";
-        updateWeights_SGD(net_fwd_args[fc1][DNNL_ARG_BIAS], 
-                   net_bwd_weights_args[clip_fc1_back_bias][DNNL_ARG_DST],
+        updateWeights_SGD(fc1.arg_bias, 
+                   fc1_back_weights.arg_diff_bias,
                    learning_rate, net_sgd, net_sgd_args, eng);
-        Reorder(net_fwd_args[fc1][DNNL_ARG_BIAS], net_fwd_inf_args[fc1_inf][DNNL_ARG_BIAS],
+        Reorder(fc1.arg_bias, fc1_inf.arg_bias,
                    net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Bias update FC2\n";
-        updateWeights_SGD(net_fwd_args[fc2][DNNL_ARG_BIAS], 
-                   net_bwd_weights_args[clip_fc2_back_bias][DNNL_ARG_DST],
+        updateWeights_SGD(fc2.arg_bias, 
+                   fc2_back_weights.arg_diff_bias,
                    learning_rate, net_sgd, net_sgd_args, eng);
-        Reorder(net_fwd_args[fc2][DNNL_ARG_BIAS], net_fwd_inf_args[fc2_inf][DNNL_ARG_BIAS],
+        Reorder(fc2.arg_bias, fc2_inf.arg_bias,
                    net_bwd_weights, net_bwd_weights_args, eng);
 
         // didn't we forget anything?
@@ -307,10 +286,10 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         net_fwd.at(i).execute(s, net_fwd_args.at(i));
 
                 if (n_iter == 0){
-                    read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
-                    read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
-                    read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
-                    read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
+                    read_from_dnnl_memory(weights_fc1_test.data(), fc1.arg_weights);
+                    read_from_dnnl_memory(bias_fc1_test.data(), fc1.arg_bias);
+                    read_from_dnnl_memory(weights_fc2_test.data(), fc2.arg_weights);
+                    read_from_dnnl_memory(bias_fc2_test.data(), fc2.arg_bias);
                     s.wait();
                     std::cout << "FC1 Weights (initial):\n";
                     print_vector2(weights_fc1_test);
@@ -349,22 +328,22 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
                         read_from_dnnl_memory(&curr_loss_inf, net_fwd_inf_args[loss_inf][DNNL_ARG_DST]);
                         read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[loss_back][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(weights_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_WEIGHTS]);
-                        read_from_dnnl_memory(bias_fc1_test.data(), net_fwd_args[fc1][DNNL_ARG_BIAS]);
-                        read_from_dnnl_memory(weights_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_WEIGHTS]);
-                        read_from_dnnl_memory(bias_fc2_test.data(), net_fwd_args[fc2][DNNL_ARG_BIAS]);
-                        read_from_dnnl_memory(diff_weights_fc1_test.data(), net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
-                        read_from_dnnl_memory(diff_weights_fc2_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_WEIGHTS]);
-                        read_from_dnnl_memory(diff_bias_fc1_test.data(), net_bwd_weights_args[fc1_back_weights][DNNL_ARG_DIFF_BIAS]);
-                        read_from_dnnl_memory(diff_bias_fc2_test.data(), net_bwd_weights_args[fc2_back_weights][DNNL_ARG_DIFF_BIAS]);
-                        read_from_dnnl_memory(diff_dst_test.data(), net_bwd_data_args[fc2_back_data][DNNL_ARG_DIFF_DST]);
+                        read_from_dnnl_memory(weights_fc1_test.data(), fc1.arg_weights);
+                        read_from_dnnl_memory(bias_fc1_test.data(), fc1.arg_bias);
+                        read_from_dnnl_memory(weights_fc2_test.data(), fc2.arg_weights);
+                        read_from_dnnl_memory(bias_fc2_test.data(), fc2.arg_bias);
+                        read_from_dnnl_memory(diff_weights_fc1_test.data(), fc1_back_weights.arg_diff_weights);
+                        read_from_dnnl_memory(diff_weights_fc2_test.data(), fc2_back_weights.arg_diff_weights);
+                        read_from_dnnl_memory(diff_bias_fc1_test.data(), fc1_back_weights.arg_diff_bias);
+                        read_from_dnnl_memory(diff_bias_fc2_test.data(), fc2_back_weights.arg_diff_bias);
+                        read_from_dnnl_memory(diff_dst_test.data(), fc2_back_data.arg_diff_dst);
                         read_from_dnnl_memory(labels_test.data(), labels_memory);
-                        read_from_dnnl_memory(src_test.data(), net_fwd_args[fc1][DNNL_ARG_SRC]);
-                        read_from_dnnl_memory(dst_test.data(), net_fwd_args[fc1][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(src_test2.data(), net_fwd_args[fc2][DNNL_ARG_SRC]);
-                        read_from_dnnl_memory(dst_test2.data(), net_fwd_args[fc2][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(src_test.data(), fc1.arg_src);
+                        read_from_dnnl_memory(dst_test.data(), fc1.arg_dst);
+                        read_from_dnnl_memory(src_test2.data(), fc2.arg_src);
+                        read_from_dnnl_memory(dst_test2.data(), fc2.arg_dst);
                         
-                        read_from_dnnl_memory(sigmoid_test2.data(), net_fwd_args[sigmoid1][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(sigmoid_test2.data(), sigmoid1.arg_dst);
                         
                         s.wait();
 
@@ -411,7 +390,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                 n_iter++;
         }
 
-        read_from_dnnl_memory(output_val.data(), net_fwd_inf_args[sigmoid1][DNNL_ARG_DST]);
+        read_from_dnnl_memory(output_val.data(), sigmoid1_inf.arg_dst);
 
         s.wait();
 
