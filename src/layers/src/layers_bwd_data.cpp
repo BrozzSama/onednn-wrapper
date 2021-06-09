@@ -1,6 +1,6 @@
 #include "layers_bwd_data.h"
 
-int Conv2D_back_data(dnnl::memory diff_dst,
+Conv2D_back_data::Conv2D_back_data(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
@@ -66,15 +66,17 @@ int Conv2D_back_data(dnnl::memory diff_dst,
 
     std::cout << "Checking diff dst memory type\n";
     auto conv_diff_dst_memory = checkType(conv_bwd_pd.diff_dst_desc(), diff_dst, net, net_args, eng);
+
+    arg_diff_src = conv_diff_src_memory;
+    arg_diff_dst = conv_diff_dst_memory;
+    arg_weights = conv_weights;
+
     net.push_back(dnnl::convolution_backward_data(conv_bwd_pd));
     net_args.push_back({{DNNL_ARG_DIFF_SRC, conv_diff_src_memory},
                         {DNNL_ARG_DIFF_DST, conv_diff_dst_memory},
                         // If something does not work check this, there might be some
                         // reordering needed done in a similar fashion to cnn_training_f32.cpp
                         {DNNL_ARG_WEIGHTS, conv_weights}});
-                        
-    // Return index to locate the layer
-    return net.size() - 1;
 }
 
 Dense_back_data::Dense_back_data(dnnl::memory diff_dst,

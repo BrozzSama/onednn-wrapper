@@ -1,6 +1,6 @@
 #include "../include/losses.h"
 
-int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true, 
+L2_Loss::L2_Loss(dnnl::memory y_hat, dnnl::memory y_true, 
             std::vector<dnnl::primitive> &net,
             std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
             dnnl::engine eng)
@@ -55,17 +55,18 @@ int L2_Loss(dnnl::memory y_hat, dnnl::memory y_true,
     // nullptr, since we have no attr (see oneDNN primitive_desc API reference)
     //auto ip_pd = dnnl::inner_product_forward::primitive_desc(ip_desc, nullptr, eng);
     auto ip_pd = dnnl::inner_product_forward::primitive_desc(ip_desc, eng);
+
+    arg_dst = loss;
     
     net.push_back(dnnl::inner_product_forward(ip_pd));
     net_args.push_back({{DNNL_ARG_SRC, loss_sub},
                         {DNNL_ARG_WEIGHTS, loss_sub},
                         {DNNL_ARG_DST, loss}});
     
-    return net.size() - 1;
 }
 
 // Net forward args is passed because a loss function contains more than one primitive
-int L2_Loss_back(dnnl::memory y_hat, dnnl::memory y_true,
+L2_Loss_back::L2_Loss_back(dnnl::memory y_hat, dnnl::memory y_true,
                  std::vector<dnnl::primitive> &net,
                  std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
                  dnnl::engine eng)
@@ -96,6 +97,9 @@ int L2_Loss_back(dnnl::memory y_hat, dnnl::memory y_true,
 
     std::unordered_map<int, dnnl::memory> sum_args;
 
+
+    arg_dst = loss_sub;
+
     sum_args.insert({DNNL_ARG_DST, loss_sub});
     for (int i = 0; i<sub_vector.size(); i++){
         sum_args.insert({DNNL_ARG_MULTIPLE_SRC + i, sub_vector[i]});
@@ -103,10 +107,9 @@ int L2_Loss_back(dnnl::memory y_hat, dnnl::memory y_true,
 
     net_args.push_back(sum_args);
 
-    return net.size() - 1;
 }
 
-int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true, 
+binaryCrossEntropyLoss::binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true, 
                            std::vector<dnnl::primitive> &net,
                            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
                            dnnl::engine eng)
@@ -269,14 +272,15 @@ int binaryCrossEntropyLoss(dnnl::memory y_hat, dnnl::memory y_true,
                                                 scalar_md, -batch_size_inv, 0.f);
     auto divide_pd = dnnl::eltwise_forward::primitive_desc(divide_desc, eng);
 
+    arg_dst = loss;
+
     net.push_back(dnnl::eltwise_forward(divide_pd));
     net_args.push_back({{DNNL_ARG_SRC, loss_sum},
                         {DNNL_ARG_DST, loss}});   
 
-    return net.size() - 1;
 }
 
-int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true,
+binaryCrossEntropyLoss_back::binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true,
                            std::vector<dnnl::primitive> &net,
                            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
                            dnnl::engine eng)
@@ -361,12 +365,12 @@ int binaryCrossEntropyLoss_back(dnnl::memory y_hat, dnnl::memory y_true,
     
     net.push_back(dnnl::binary(division_pd));
     
+    arg_dst = loss_diff;
+
     std::unordered_map<int, dnnl::memory> division_args;
     division_args.insert({DNNL_ARG_SRC_0, sub_num});
     division_args.insert({DNNL_ARG_SRC_1, sub_den});
     division_args.insert({DNNL_ARG_DST, loss_diff});
 
     net_args.push_back(division_args);
-
-    return net.size() - 1;
 }

@@ -29,7 +29,11 @@ class Dense{
     
 };
 
-int Conv2D(int batch_size, int patch_length,
+class Conv2D{
+    public:
+        dnnl::memory arg_src, arg_dst;
+        dnnl::memory arg_bias, arg_weights;
+        Conv2D(int batch_size, int patch_length,
            int n_kernels, int kernel_size,
            int stride_length, int padding_length,
            int dilation,
@@ -37,6 +41,10 @@ int Conv2D(int batch_size, int patch_length,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng);
+    private:
+    
+};
+
 #endif 
 
 

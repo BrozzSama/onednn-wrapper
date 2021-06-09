@@ -2,7 +2,7 @@
 
 
 // Conv2D, only Glorot initializer implemented
-int Conv2D(int batch_size, int patch_length,
+Conv2D::Conv2D(int batch_size, int patch_length,
            int n_kernels, int kernel_size,
            int stride_length, int padding_length,
            int dilation,
@@ -115,6 +115,11 @@ int Conv2D(int batch_size, int patch_length,
     // Create memory for output (no check needed)
     auto conv_dst_memory = dnnl::memory(conv_pd.dst_desc(), eng);
 
+    arg_src = conv_src_memory;
+    arg_weights = conv_weights_memory;
+    arg_bias = conv_bias_memory;
+    arg_dst = conv_dst_memory;
+
     // Append primitive to network vector
     net.push_back(dnnl::convolution_forward(conv_pd));
     net_args.push_back({{DNNL_ARG_SRC, conv_src_memory},
@@ -123,7 +128,6 @@ int Conv2D(int batch_size, int patch_length,
                         {DNNL_ARG_DST, conv_dst_memory}});
     std::cout << "Convolutional layer created, new net args size is: " << net_args.size() << "\n";
     // Return index to locate the layer
-    return net.size() - 1;
 }
 
 

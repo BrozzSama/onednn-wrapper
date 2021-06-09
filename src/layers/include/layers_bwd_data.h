@@ -10,19 +10,24 @@
 #ifndef _LAYERS_BWD_DATA
 #define _LAYERS_BWD_DATA
 
-
-int Conv2D_back_data(dnnl::memory diff_dst,
+class Conv2D_back_data{
+    public:
+        dnnl::memory arg_diff_src, arg_diff_dst;
+        dnnl::memory arg_weights;
+        Conv2D_back_data(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng);
+    private:
+          
+};
 
 class Eltwise_back{
     public:
-        dnnl::memory arg_diff_src, arg_diff_dst;
-        dnnl::memory arg_src;
+        dnnl::memory arg_diff_src, arg_src, arg_diff_dst;
         Eltwise_back(dnnl::algorithm activation,
           float alpha,
           float beta,

@@ -152,7 +152,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         // BCE loss
 
-        int loss = binaryCrossEntropyLoss(sigmoid1.arg_dst, labels_memory, net_fwd, net_fwd_args, eng);
+        binaryCrossEntropyLoss loss(sigmoid1.arg_dst, labels_memory, net_fwd, net_fwd_args, eng);
 
         // Inference
 
@@ -181,17 +181,16 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         // BCE loss
 
-        int loss_inf = binaryCrossEntropyLoss(sigmoid1_inf.arg_dst, labels_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
+        binaryCrossEntropyLoss loss_inf(sigmoid1_inf.arg_dst, labels_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
 
         //-----------------------------------------------------------------------
         //----------------- Backpropagation Stream  (Data)-------------------------------------
 
         std::cout << "Creating backward Loss" << "\n";
-        //int loss_back = L2_Loss_back(net_fwd_args[sigmoid1][DNNL_ARG_DST], labels_memory, net_bwd_data, net_bwd_data_args, eng);
-        int loss_back = binaryCrossEntropyLoss_back(sigmoid1.arg_dst, labels_memory, net_bwd_data, net_bwd_data_args, eng);
+        binaryCrossEntropyLoss_back loss_back(sigmoid1.arg_dst, labels_memory, net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating the second Dense layer (back)\n"; 
         Eltwise_back sigmoid1_back_data(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, sigmoid1, 
-                                         net_bwd_data_args[loss_back][DNNL_ARG_DST], net_bwd_data, net_bwd_data_args, eng);
+                                         loss_back.arg_dst, net_bwd_data, net_bwd_data_args, eng);
         Dense_back_data fc2_back_data(sigmoid1_back_data.arg_diff_src, fc2, net_bwd_data, net_bwd_data_args, eng);
         Eltwise_back relu1_back_data(dnnl::algorithm::eltwise_relu, 0.f, 0.f, relu1, 
                                          fc2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
@@ -325,9 +324,9 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                                 net_fwd_inf.at(i).execute(s, net_fwd_inf_args.at(i));
 
                         s.wait();
-                        read_from_dnnl_memory(&curr_loss, net_fwd_args[loss][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(&curr_loss_inf, net_fwd_inf_args[loss_inf][DNNL_ARG_DST]);
-                        read_from_dnnl_memory(curr_loss_diff.data(), net_bwd_data_args[loss_back][DNNL_ARG_DST]);
+                        read_from_dnnl_memory(&curr_loss, loss.arg_dst);
+                        read_from_dnnl_memory(&curr_loss_inf, loss_inf.arg_dst);
+                        read_from_dnnl_memory(curr_loss_diff.data(), loss_back.arg_dst);
                         read_from_dnnl_memory(weights_fc1_test.data(), fc1.arg_weights);
                         read_from_dnnl_memory(bias_fc1_test.data(), fc1.arg_bias);
                         read_from_dnnl_memory(weights_fc2_test.data(), fc2.arg_weights);

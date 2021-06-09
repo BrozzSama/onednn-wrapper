@@ -12,13 +12,20 @@
 using tag = dnnl::memory::format_tag;
 using dt = dnnl::memory::data_type;
 
-int Conv2D_back_weights(dnnl::memory diff_dst,
+class Conv2D_back_weights{
+    public:
+        dnnl::memory arg_src, arg_diff_dst;
+        dnnl::memory arg_diff_weights, arg_diff_bias;
+        Conv2D_back_weights(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
            std::vector<dnnl::primitive> &net,
            std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
            dnnl::engine eng);
+    private:
+          
+};
 
 class Dense_back_weights{
     public:

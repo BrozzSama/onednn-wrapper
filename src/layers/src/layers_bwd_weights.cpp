@@ -1,6 +1,6 @@
 #include "layers_bwd_weights.h"
 
-int Conv2D_back_weights(dnnl::memory diff_dst,
+Conv2D_back_weights::Conv2D_back_weights(dnnl::memory diff_dst,
            std::unordered_map<int, dnnl::memory> conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
@@ -65,6 +65,12 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
 
     conv_bwd_src_memory = checkType(conv_bwd_pd.src_desc(), conv2d_fwd[DNNL_ARG_SRC], net, net_args, eng);
     auto conv_diff_dst_memory = checkType(conv_bwd_pd.diff_dst_desc(), diff_dst, net, net_args, eng);
+
+    arg_src = conv_bwd_src_memory;
+    arg_diff_dst = conv_diff_dst_memory;
+    arg_diff_weights = conv_diff_weights_memory;
+    arg_diff_bias = conv_diff_bias_memory;
+
     net.push_back(dnnl::convolution_backward_weights(conv_bwd_pd));
     net_args.push_back({{DNNL_ARG_SRC, conv_bwd_src_memory},
                         {DNNL_ARG_DIFF_DST, conv_diff_dst_memory},
@@ -72,9 +78,6 @@ int Conv2D_back_weights(dnnl::memory diff_dst,
                         // reordering needed done in a similar fashion to cnn_training_f32.cpp
                         {DNNL_ARG_DIFF_WEIGHTS, conv_diff_weights_memory},
                         {DNNL_ARG_DIFF_BIAS, conv_diff_bias_memory}});
-    
-    // Return index to locate the layer
-    return net.size() - 1;
 }
 
 Dense_back_weights::Dense_back_weights(dnnl::memory diff_dst,
