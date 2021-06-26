@@ -229,11 +229,21 @@ Dense::Dense(int fc_output_size,
     std::cout << "Bias MD OK!\n";
     auto dst_md_fc = dnnl::memory::desc(dst_dims_fc, dt::f32, tag::nc);
     std::cout << "DST MD OK!\n";
-
+    dnnl::memory::desc weights_md_fc;
+    if ( from_conv ){
+        std::cout << "Set tag from_conv: \n";
+        weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::oihw)
+    }
+    else {
+        weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::oi);
+    }
+    std::cout << "Weights MD OK!\n";
     std::cout << "time to allocate some memory!\n";
     auto src_mem_fc = dnnl::memory(src_md_fc, eng);
     std::cout << "Source allocated!\n";
     auto bias_mem_fc = dnnl::memory(bias_md_fc, eng);
+    std::cout << "Weights allocated!\n";
+    auto weights_mem_fc = dnnl::memory(weights_md_fc, eng);
     std::cout << "Bias allocated!\n";
     auto dst_mem_fc = dnnl::memory(dst_md_fc, eng);
     std::cout << "Destination allocated!\n";
@@ -241,7 +251,6 @@ Dense::Dense(int fc_output_size,
     // No initialization, will be done in post-op routine
     std::vector<float> fc_weights(product(weights_dims_fc));
     std::vector<float> fc_bias(product(bias_dims_fc));
-
 
     std::cout << "Initializing weights: \n";
     for (int i = 0; i<fc_weights.size(); i++){
@@ -255,25 +264,12 @@ Dense::Dense(int fc_output_size,
         fc_bias[i] = norm_dist(generator);
         //std::cout << fc_bias[i] << " ";
     }
-    std::cout << "\n";
-
-    dnnl::memory weights_mem_fc;
-    if ( from_conv ){
-        std::cout << "Set tag from_conv: \n";
-        // If something does not work check here (oihw?)
-        weights_mem_fc = dnnl::memory({weights_dims_fc, dt::f32, tag::oihw}, eng);
-    }
-    else {
-        weights_mem_fc = dnnl::memory({weights_dims_fc, dt::f32, tag::oi}, eng);
-    }
+    std::cout << "\n"; 
 
     std::cout << "Write bias to memory: \n";
     write_to_dnnl_memory(fc_bias.data(), bias_mem_fc);
      std::cout << "Write weights to memory: \n";
     write_to_dnnl_memory(fc_weights.data(), weights_mem_fc);
-
-    //auto weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::any);
-    auto weights_md_fc = weights_mem_fc.get_desc();
 
     
     std::cout << "Dimensions:\n";
@@ -303,9 +299,6 @@ Dense::Dense(int fc_output_size,
     weights_mem_fc = checkType(fc_pd.weights_desc(), weights_mem_fc, net, net_args, eng);
     std::cout << "Check bias type\n";
     bias_mem_fc = checkType(fc_pd.bias_desc(), bias_mem_fc, net, net_args, eng);
-    
-    // Create memory for output (no check needed)
-    auto conv_dst_memory = dnnl::memory(fc_pd.dst_desc(), eng);
 
     // Set dnnl::memory pointers inside class
     arg_src = src_mem_fc;
