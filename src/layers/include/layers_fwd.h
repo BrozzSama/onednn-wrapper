@@ -28,8 +28,7 @@ class Dense{
         /**
          * @brief Construct a new Dense object
          * 
-         * @param src_dims These are the source dimensions of the FC layer
-         * @param fc_output_size this is the number of neurons inside the FC layer
+         * @param fc_output_size this is the number of units inside the FC layer
          * @param input Input memory
          * @param net This is the vector of primitives to which we will append the FC layer primitive
          * @param net_args This is the associated map to which we will add the arguments of the primitive

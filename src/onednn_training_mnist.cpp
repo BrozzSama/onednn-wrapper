@@ -1,4 +1,3 @@
-/// @example onednn_training_mnist.cpp
 /// @copybrief onednn_training_mnist
 ///
 /// @page onednn_training_mnist CNN example using oneDNN wrapper
