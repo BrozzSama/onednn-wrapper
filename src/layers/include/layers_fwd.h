@@ -45,6 +45,19 @@ class Conv2D{
     
 };
 
+class MaxPool2D{
+    public:
+        dnnl::memory arg_src, arg_dst, arg_workspace;
+        dnnl::pooling_v2_forward::primitive_desc *pooling_fwd_pd;
+        MaxPool2D(int kernel_size, int stride_length, 
+           dnnl::memory input,
+           std::vector<dnnl::primitive> &net,
+           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+           dnnl::engine eng);
+    private:
+    
+};
+
 #endif 
 
 

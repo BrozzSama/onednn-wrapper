@@ -130,6 +130,61 @@ Conv2D::Conv2D(int batch_size, int patch_length,
     // Return index to locate the layer
 }
 
+MaxPool2D::MaxPool2D(int kernel_size, int stride_length, 
+           dnnl::memory input,
+           std::vector<dnnl::primitive> &net,
+           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+           dnnl::engine eng)
+{
+    auto src_md = input.get_desc();
+
+    long batch = src_md.dims()[0];
+    long channels = src_md.dims()[1];
+    long input_height = src_md.dims()[2];
+    long input_width = src_md.dims()[3];
+    long padding = 0;
+
+    const dnnl::memory::dim output_height = (input_height - ((kernel_size - 1) * 1 + kernel_size) + padding + padding) / stride_length + 1;
+    const dnnl::memory::dim output_width = (input_width - ((kernel_size - 1) * 1 + kernel_size) + padding + padding) / stride_length + 1;
+
+    // Source (src) and destination (dst) tensors dimensions.
+    dnnl::memory::dims src_dims = {batch, channels, input_height, input_width};
+    dnnl::memory::dims dst_dims = {batch, channels, output_height, output_width};
+
+    // Kernel dimensions.
+    dnnl::memory::dims kernel_dims = {kernel_size, kernel_size};
+    // Strides, padding dimensions.
+    dnnl::memory::dims strides_dims = {stride_length, stride_length};
+    dnnl::memory::dims padding_dims_l = {padding, padding};
+    dnnl::memory::dims padding_dims_r = {padding, padding};
+    dnnl::memory::dims dilation = {1, 1};
+
+
+    auto dst_md = dnnl::memory::desc(dst_dims, dt::f32, tag::nchw);
+    auto dst_mem = dnnl::memory(dst_md, eng);
+    std::cout << "Allocated DST MEM\n";
+
+    // Create descriptor.
+    auto pooling_desc = dnnl::pooling_v2_forward::desc(dnnl::prop_kind::forward_training,
+            dnnl::algorithm::pooling_max, src_md, dst_md, strides_dims, kernel_dims,
+            dilation, padding_dims_l, padding_dims_r);
+    auto pooling_pd = dnnl::pooling_v2_forward::primitive_desc(pooling_desc, eng);
+    std::cout << "Allocated primitive";
+
+    auto workspace_mem = dnnl::memory(pooling_pd.workspace_desc(), eng);
+    std::cout << "Workspace allocated\n";
+
+    arg_src = input;
+    arg_dst = dst_mem;
+    arg_workspace = workspace_mem;
+    pooling_fwd_pd = &pooling_pd;
+
+    net.push_back(dnnl::pooling_v2_forward(pooling_pd));
+    net_args.push_back({{DNNL_ARG_SRC, input},
+                        {DNNL_ARG_DST, dst_mem},
+                        {DNNL_ARG_WORKSPACE, workspace_mem}
+                        });
+}
 
 Dense::Dense(dnnl::memory::dims src_dims, 
           int fc_output_size,
@@ -200,10 +255,10 @@ Dense::Dense(dnnl::memory::dims src_dims,
     }
     std::cout << "\n";
 
-    std::cout << "Set tag from_conv: \n";
-    // If something does not work check here (oihw?)
     dnnl::memory weights_mem_fc;
     if ( from_conv ){
+        std::cout << "Set tag from_conv: \n";
+        // If something does not work check here (oihw?)
         weights_mem_fc = dnnl::memory({weights_dims_fc, dt::f32, tag::oihw}, eng);
     }
     else {

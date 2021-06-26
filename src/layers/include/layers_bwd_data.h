@@ -15,7 +15,7 @@ class Conv2D_back_data{
         dnnl::memory arg_diff_src, arg_diff_dst;
         dnnl::memory arg_weights;
         Conv2D_back_data(dnnl::memory diff_dst,
-           std::unordered_map<int, dnnl::memory> conv2d_fwd,
+           Conv2D conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
            std::vector<dnnl::primitive> &net,
@@ -23,6 +23,19 @@ class Conv2D_back_data{
            dnnl::engine eng);
     private:
           
+};
+
+class MaxPool2D_back{
+    public:
+        dnnl::memory arg_diff_src, arg_diff_dst;
+        MaxPool2D_back(int kernel_size, int stride_length, 
+           MaxPool2D maxpool_fwd,
+           dnnl::memory diff_dst_mem,
+           std::vector<dnnl::primitive> &net,
+           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
+           dnnl::engine eng);
+    private:
+    
 };
 
 class Eltwise_back{

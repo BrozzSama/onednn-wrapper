@@ -1,7 +1,7 @@
 #include "layers_bwd_weights.h"
 
 Conv2D_back_weights::Conv2D_back_weights(dnnl::memory diff_dst,
-           std::unordered_map<int, dnnl::memory> conv2d_fwd,
+           Conv2D conv2d_fwd,
            int stride_length, int padding_length,
            int dilation,
            std::vector<dnnl::primitive> &net,
@@ -11,18 +11,18 @@ Conv2D_back_weights::Conv2D_back_weights(dnnl::memory diff_dst,
 
     std::cout << "Allocating memory for backward convolution\n";
     // Create memory area for backward pass (get types from conv2d_fwd)
-    auto conv_diff_weights_memory = dnnl::memory(conv2d_fwd[DNNL_ARG_WEIGHTS].get_desc(), eng);
-    auto conv_diff_bias_memory = dnnl::memory(conv2d_fwd[DNNL_ARG_BIAS].get_desc(), eng);
+    auto conv_diff_weights_memory = dnnl::memory(conv2d_fwd.arg_weights.get_desc(), eng);
+    auto conv_diff_bias_memory = dnnl::memory(conv2d_fwd.arg_bias.get_desc(), eng);
 
     std::cout << "Obtaining memory descriptors for backward convolution\n";
     // create memory descriptors for f32 convolution data
-    auto conv_bwd_src_md = conv2d_fwd[DNNL_ARG_SRC].get_desc();
-    auto conv_diff_weights_md = conv2d_fwd[DNNL_ARG_WEIGHTS].get_desc();
+    auto conv_bwd_src_md = conv2d_fwd.arg_src.get_desc();
+    auto conv_diff_weights_md = conv2d_fwd.arg_weights.get_desc();
     // Get dst descriptor to recreate forward primitive
-    auto conv_fwd_dst_md = conv2d_fwd[DNNL_ARG_DST].get_desc();
+    auto conv_fwd_dst_md = conv2d_fwd.arg_dst.get_desc();
 
     auto conv_diff_dst_md = diff_dst.get_desc();
-    auto conv_diff_bias_md = conv2d_fwd[DNNL_ARG_BIAS].get_desc();
+    auto conv_diff_bias_md = conv2d_fwd.arg_bias.get_desc();
 
     std::cout << "SRC dims size: " << conv_bwd_src_md.dims().size() << "\n";
     std::cout << "Source vector md content: " << "\n";
@@ -63,7 +63,7 @@ Conv2D_back_weights::Conv2D_back_weights(dnnl::memory diff_dst,
     
     auto conv_bwd_pd = dnnl::convolution_backward_weights::primitive_desc(conv_bwd_desc, eng, conv_fwd_pd);
 
-    conv_bwd_src_memory = checkType(conv_bwd_pd.src_desc(), conv2d_fwd[DNNL_ARG_SRC], net, net_args, eng);
+    conv_bwd_src_memory = checkType(conv_bwd_pd.src_desc(), conv2d_fwd.arg_src, net, net_args, eng);
     auto conv_diff_dst_memory = checkType(conv_bwd_pd.diff_dst_desc(), diff_dst, net, net_args, eng);
 
     arg_src = conv_bwd_src_memory;
