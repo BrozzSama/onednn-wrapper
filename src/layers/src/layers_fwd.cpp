@@ -186,8 +186,7 @@ MaxPool2D::MaxPool2D(int kernel_size, int stride_length,
                         });
 }
 
-Dense::Dense(dnnl::memory::dims src_dims, 
-          int fc_output_size,
+Dense::Dense(int fc_output_size,
           dnnl::memory input,
           std::vector<dnnl::primitive> &net,
           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,
@@ -200,26 +199,29 @@ Dense::Dense(dnnl::memory::dims src_dims,
     std::normal_distribution<float> norm_dist(0.f,1.f);
 
     // 0,1,2,3 are used to grab the dimension we need from the source dims vector
+
     dnnl::memory::dims weights_dims_fc;
     dnnl::memory::dims bias_dims_fc = {fc_output_size};
-    dnnl::memory::dims dst_dims_fc = {src_dims[0], fc_output_size};  
+    dnnl::memory::dims dst_dims_fc;
+    dnnl::memory::desc src_md_fc = input.get_desc(); 
+    dnnl::memory::dims src_dims_fc = src_md_fc.dims();
 
     // check if we need to flatten ie. use the proper tag according to vector size
     // TODO. check what happens with dimension 3 ;)
-    bool from_conv = (src_dims.size() > 3);
+    bool from_conv = (src_dims_fc.size() > 3);
     
     std::cout << "Time to create some memory descriptors!\n";
 
-    dnnl::memory::desc src_md_fc;
     
     if ( from_conv ){
-        src_md_fc = dnnl::memory::desc(src_dims, dt::f32, tag::nchw);
-        weights_dims_fc = {fc_output_size, src_dims[1], src_dims[2], src_dims[3]};
+        weights_dims_fc = {fc_output_size, src_dims_fc[1], src_dims_fc[2], src_dims_fc[3]};
     }
     else {
-        src_md_fc = dnnl::memory::desc(src_dims, dt::f32, tag::nc);
-        weights_dims_fc = {fc_output_size, src_dims[1]};
+        weights_dims_fc = {fc_output_size, src_dims_fc[1]};
     }
+
+
+    dst_dims_fc = {src_dims_fc[0], fc_output_size}; 
 
     std::cout << "Source MD OK!\n";
 

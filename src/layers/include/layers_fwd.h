@@ -35,8 +35,7 @@ class Dense{
          * @param net_args This is the associated map to which we will add the arguments of the primitive
          * @param eng oneAPI engine that will host the primitive
          */
-        Dense(dnnl::memory::dims src_dims, 
-          int fc_output_size,
+        Dense(int fc_output_size,
           dnnl::memory input,
           std::vector<dnnl::primitive> &net,
           std::vector<std::unordered_map<int, dnnl::memory>> &net_args,

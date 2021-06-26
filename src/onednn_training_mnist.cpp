@@ -146,8 +146,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         int conv_o_w = maxpool2.arg_dst.get_desc().dims()[3];
         memory::dims fc1_src_dims = {batch, flatten_kernels, conv_o_h, conv_o_w};
         int fc1_output_size = 256;
-        Dense fc1(fc1_src_dims, fc1_output_size, 
-                        maxpool2.arg_dst, net_fwd, net_fwd_args, eng);
+        Dense fc1(fc1_output_size, maxpool2.arg_dst, net_fwd, net_fwd_args, eng);
 
         Eltwise relu2(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1.arg_dst,
                             net_fwd, net_fwd_args, eng);
@@ -159,8 +158,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         memory::dims fc2_src_dims = {batch, fc1_output_size};
         int fc2_output_size = 1;
-        Dense fc2(fc2_src_dims, fc2_output_size, 
-                        relu2.arg_dst, net_fwd, net_fwd_args, eng);
+        Dense fc2(fc2_output_size, relu2.arg_dst, net_fwd, net_fwd_args, eng);
                         
         Eltwise sigmoid1(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2.arg_dst,
                             net_fwd, net_fwd_args, eng);

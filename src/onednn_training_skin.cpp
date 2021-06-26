@@ -112,8 +112,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         memory::dims fc1_src_dims = {batch, n_features};
         int fc1_output_size = 5;
-        Dense fc1(fc1_src_dims, fc1_output_size, 
-                        input_memory, net_fwd, net_fwd_args, eng);
+        Dense fc1(fc1_output_size, input_memory, net_fwd, net_fwd_args, eng);
 
         Eltwise relu1(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1.arg_dst,
                             net_fwd, net_fwd_args, eng);
@@ -125,8 +124,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         memory::dims fc2_src_dims = {batch, fc1_output_size};
         int fc2_output_size = 1;
-        Dense fc2(fc2_src_dims, fc2_output_size, 
-                        relu1.arg_dst, net_fwd, net_fwd_args, eng);
+        Dense fc2(fc2_output_size, relu1.arg_dst, net_fwd, net_fwd_args, eng);
                         
         Eltwise sigmoid1 (dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2.arg_dst,
                             net_fwd, net_fwd_args, eng);
@@ -143,8 +141,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
         memory::dims fc1_src_dims_inf = {samples_val, n_features};
-        Dense fc1_inf(fc1_src_dims_inf, fc1_output_size, 
-                        input_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
+        Dense fc1_inf(fc1_output_size, input_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
         Eltwise relu1_inf(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1_inf.arg_dst,
                             net_fwd_inf, net_fwd_inf_args, eng);
 
@@ -154,8 +151,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // {batch, fc1_output_size} -> {batch, 1}
 
         memory::dims fc2_src_dims_inf = {samples_val, fc1_output_size};
-        Dense fc2_inf(fc2_src_dims_inf, fc2_output_size, 
-                        relu1_inf.arg_dst, net_fwd_inf, net_fwd_inf_args, eng);
+        Dense fc2_inf(fc2_output_size, relu1_inf.arg_dst, net_fwd_inf, net_fwd_inf_args, eng);
                         
         Eltwise sigmoid1_inf(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2_inf.arg_dst,
                             net_fwd_inf, net_fwd_inf_args, eng);
