@@ -13,7 +13,7 @@ void updateWeights_SGD(dnnl::memory weights,
 
     // Minibatch gradient descent needs normalization
     const long minibatch_size = sub_vector_md[0].dims()[0];
-    std::vector<float> scales = {1.f, (learning_rate/minibatch_size) * (-1.f)};
+    std::vector<float> scales = {1.f, (learning_rate) * (-1.f)};
 
     auto weights_update_pd = dnnl::sum::primitive_desc(sub_vector_md[0], scales, sub_vector_md, eng);
 

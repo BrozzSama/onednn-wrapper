@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 
 data_path = "data/SkinSegmentation.txt"
 
-df = pd.read_csv(data_path, delimiter="\t")
+df = pd.read_csv(data_path, delimiter=",")
 
 # NH format
 myScaler = MinMaxScaler()

@@ -59,8 +59,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         stream s(eng);
 
         // MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)
-        const long samples = config_file["samples"];
-        const long samples_val = config_file["samples_val"];
         const long batch = config_file["minibatch_size"];
 
         /// @subsection Load Dataset
@@ -71,15 +69,14 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         auto dataset_path_val = config_file["dataset_path_val"];
         auto labels_path_val = config_file["labels_path_val"];
 
-        std::vector<long> dataset_shape = {samples, 3};      //Skin dataset
-        std::vector<long> dataset_shape_val = {samples_val, 3};      //Skin dataset
+        std::vector<long> dataset_shape = {3};      //Skin dataset
 
         // Data loader 
 
-        DataLoader skin_data(dataset_path, labels_path, samples, batch, dataset_shape, eng);
+        DataLoader skin_data(dataset_path, labels_path, batch, dataset_shape, eng);
         std::cout << "Dataloader instantiated\n";
 
-        DataLoader skin_data_val(dataset_path_val, labels_path_val, samples_val, samples_val, dataset_shape_val, eng);
+        DataLoader skin_data_val(dataset_path_val, labels_path_val, -1, dataset_shape, eng);
         std::cout << "Dataloader instantiated\n";
 
         using tag = memory::format_tag;
@@ -89,7 +86,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         std::vector<primitive> net_fwd, net_fwd_inf, net_bwd_data, net_bwd_weights, net_sgd;
         std::vector<std::unordered_map<int, memory>> net_fwd_args, net_fwd_inf_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
 
-        const int n_features = dataset_shape[1];
+        const int n_features = dataset_shape[0];
         const float learning_rate = config_file["learning_rate"];
 
         // Load inputs inside engine
@@ -98,8 +95,8 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         auto input_memory = memory({{input_dim}, dt::f32, tag::nc}, eng);
         auto labels_memory = memory({{labels_dim}, dt::f32, tag::nc}, eng);
 
-        memory::dims input_dim_val = {samples_val, n_features};
-        memory::dims labels_dim_val = {samples_val, 1};
+        memory::dims input_dim_val = {skin_data_val.dataset_size, n_features};
+        memory::dims labels_dim_val = {skin_data_val.dataset_size, 1};
         auto input_memory_val = memory({{input_dim_val}, dt::f32, tag::nc}, eng);
         auto labels_memory_val = memory({{labels_dim_val}, dt::f32, tag::nc}, eng);
 
@@ -140,7 +137,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // PnetCLS: Fully Connected 1
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
-        memory::dims fc1_src_dims_inf = {samples_val, n_features};
+        memory::dims fc1_src_dims_inf = {skin_data_val.dataset_size, n_features};
         Dense fc1_inf(fc1_output_size, input_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
         Eltwise relu1_inf(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1_inf.arg_dst,
                             net_fwd_inf, net_fwd_inf_args, eng);
@@ -150,7 +147,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // PnetCLS: Fully Connected 2
         // {batch, fc1_output_size} -> {batch, 1}
 
-        memory::dims fc2_src_dims_inf = {samples_val, fc1_output_size};
+        memory::dims fc2_src_dims_inf = {skin_data_val.dataset_size, fc1_output_size};
         Dense fc2_inf(fc2_output_size, relu1_inf.arg_dst, net_fwd_inf, net_fwd_inf_args, eng);
                         
         Eltwise sigmoid1_inf(dnnl::algorithm::eltwise_logistic, 0.f, 0.f, fc2_inf.arg_dst,
@@ -244,13 +241,13 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         
         // Prepare memory that will host final output
         std::vector<float> sigmoid_test2(batch);
-        std::vector<float> output_val(samples_val);
+        std::vector<float> output_val(skin_data_val.dataset_size);
 
 
         //unsigned long batch_size = batch;
         unsigned long batch_size = max_iter/step;
         const unsigned long loss_dim [] = {batch_size};
-        const unsigned long output_val_dim [] = {config_file["samples_val"]};
+        const unsigned long output_val_dim [] = {(unsigned long) skin_data_val.dataset_size};
 
         // execute
         while (n_iter < max_iter)
@@ -347,7 +344,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                         print_vector2(diff_dst_test);
                         std::cout << "FC1 SRC:\n";
                         print_vector2(labels_test, batch);
-                        print_vector2(src_test, batch * dataset_shape[1]);
+                        print_vector2(src_test, batch * dataset_shape[0]);
                         std::cout << "FC1 DST:\n";
                         print_vector2(dst_test);
                         std::cout << "FC2 SRC:\n";

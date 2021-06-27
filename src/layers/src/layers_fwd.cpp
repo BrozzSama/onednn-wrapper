@@ -232,7 +232,7 @@ Dense::Dense(int fc_output_size,
     dnnl::memory::desc weights_md_fc;
     if ( from_conv ){
         std::cout << "Set tag from_conv: \n";
-        weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::oihw)
+        weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::oihw);
     }
     else {
         weights_md_fc = dnnl::memory::desc(weights_dims_fc, dt::f32, tag::oi);
