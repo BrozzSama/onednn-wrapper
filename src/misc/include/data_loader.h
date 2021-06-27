@@ -17,7 +17,7 @@ class DataLoader{
         std::vector<float> curr_batch, curr_batch_labels;
         void load_from_file(std::string filename, std::vector<float> &data);
         void write_to_memory(dnnl::memory dst_mem_features, dnnl::memory dst_mem_labels);
-        DataLoader(std::string features_path, std::string labels_path, int _dataset_size, int _minibatch_size, std::vector<long> dataset_shape, dnnl::engine _eng);
+        DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector<long> dataset_shape, dnnl::engine _eng);
     private:
         int dataset_idx, sample_size;
         dnnl::engine eng;
