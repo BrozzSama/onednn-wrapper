@@ -107,7 +107,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // PnetCLS: Fully Connected 1
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
-        memory::dims fc1_src_dims = {batch, n_features};
         int fc1_output_size = 5;
         Dense fc1(fc1_output_size, input_memory, net_fwd, net_fwd_args, eng);
 
@@ -137,7 +136,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         // PnetCLS: Fully Connected 1
         // {batch, 64, patch_size, patch_size} -> {batch, fc1_output_size}
 
-        memory::dims fc1_src_dims_inf = {skin_data_val.dataset_size, n_features};
         Dense fc1_inf(fc1_output_size, input_memory_val, net_fwd_inf, net_fwd_inf_args, eng);
         Eltwise relu1_inf(dnnl::algorithm::eltwise_relu, 0.f, 0.f, fc1_inf.arg_dst,
                             net_fwd_inf, net_fwd_inf_args, eng);

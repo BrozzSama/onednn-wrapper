@@ -72,4 +72,27 @@ Again, considering the Dense layer we instantiate the backward weights pass as f
 - net_bwd_weights_args which is the memory map associated to net_bwd_data
 - eng is the dnnl::engine that we are net_bwd_weights
 
-## Using data loaders to have inference 
+## Data Loading
+
+Data is loaded inside the oneAPI memory using the DataLoader class. It reads the file in flattended txt format, which means that the vectors are written in row-major order in a text file. An example on how to generate these files starting from a csv is available in dataset_utils. 
+
+To instantiate a data loader the syntax is the following
+    DataLoader skin_data(dataset_path, labels_path, batch, dataset_shape, eng);
+
+- dataset_path is the path to the file containing the features
+- labels_path is the path to the file containing the labels
+- batch is the minibatch size
+- dataset_shape is the shape of each feature, for example it can be a vector of the form {N, C, H} for an image or {C} for a simple feature vector that has length C
+- eng is the oneAPI engine
+
+Once the data loader class is instantiated we can simply use
+
+    skin_data.write_to_memory(input_memory, labels_memory)
+
+to load a batch of features and label inside the dnnl::memory objects: input_memory and labels_memory. The useful thing about this method is that it can be called as many times as we need, everytime we need a new mini-batch.
+
+### Inference
+
+To have inference we can instantiate an extra dataloader with a validation set. To have batch size as large as the sample size we can put -1.
+
+    DataLoader skin_data(dataset_path, labels_path, -1, dataset_shape, eng)
