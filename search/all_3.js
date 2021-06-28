@@ -1,6 +1,6 @@
 var searchData=
 [
-  ['dataloader_13',['DataLoader',['../classDataLoader.html',1,'DataLoader'],['../classDataLoader.html#ad36b4f42349521f3818b4b0967fd979d',1,'DataLoader::DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector&lt; long &gt; dataset_shape, dnnl::engine _eng)']]],
+  ['dataloader_13',['DataLoader',['../classDataLoader.html',1,'DataLoader'],['../classDataLoader.html#aeecfe01f0613b8dc7aa0503934246c65',1,'DataLoader::DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector&lt; int &gt; dataset_shape, dnnl::engine _eng)']]],
   ['dataset_14',['dataset',['../classDataLoader.html#ae5dd77d8c1d45b5f3057564604dc1030',1,'DataLoader']]],
   ['dataset_5flabels_15',['dataset_labels',['../classDataLoader.html#a6adfee7f2a14744d1543940b94400d45',1,'DataLoader']]],
   ['dataset_5fsize_16',['dataset_size',['../classDataLoader.html#a23b0149c675cc34370065eff2bcca2a4',1,'DataLoader']]],

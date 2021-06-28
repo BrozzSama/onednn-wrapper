@@ -1,6 +1,6 @@
 var classDataLoader =
 [
-    [ "DataLoader", "classDataLoader.html#ad36b4f42349521f3818b4b0967fd979d", null ],
+    [ "DataLoader", "classDataLoader.html#aeecfe01f0613b8dc7aa0503934246c65", null ],
     [ "write_to_memory", "classDataLoader.html#a333e4be57bbaaa78f003553e4a4f5632", null ],
     [ "curr_batch", "classDataLoader.html#a6bda9123be7520cee596dd8ad48b34eb", null ],
     [ "curr_batch_labels", "classDataLoader.html#a3c862b7af2aed3f041e992fc454c6280", null ],

@@ -140,18 +140,16 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">        stream s(eng);</div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)</span></div>
-<div class="line">        <span class="comment">//unsigned long samples = 245057;</span></div>
-<div class="line">        <span class="keyword">const</span> <span class="keywordtype">long</span> samples = config_file[<span class="stringliteral">&quot;samples&quot;</span>];</div>
 <div class="line">        <span class="keyword">const</span> <span class="keywordtype">long</span> batch = config_file[<span class="stringliteral">&quot;minibatch_size&quot;</span>];</div>
 <div class="line">        <span class="comment">// Load dataset</span></div>
 <div class="line">        <span class="keyword">auto</span> dataset_path = config_file[<span class="stringliteral">&quot;dataset_path&quot;</span>];</div>
 <div class="line">        <span class="keyword">auto</span> labels_path = config_file[<span class="stringliteral">&quot;labels_path&quot;</span>];</div>
 <div class="line"> </div>
-<div class="line">        std::vector&lt;long&gt; dataset_shape = {samples, 28, 28};      <span class="comment">//MNIST dataset</span></div>
+<div class="line">        std::vector&lt;int&gt; dataset_shape = {1, 28, 28};      <span class="comment">//MNIST dataset</span></div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// Data loader </span></div>
 <div class="line"> </div>
-<div class="line">        <a class="code" href="classDataLoader.html">DataLoader</a> mnist_data(dataset_path, labels_path, samples, batch, dataset_shape, eng);</div>
+<div class="line">        <a class="code" href="classDataLoader.html">DataLoader</a> mnist_data(dataset_path, labels_path, batch, dataset_shape, eng);</div>
 <div class="line"> </div>
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Dataloader instantiated\n&quot;</span>;</div>
 <div class="line"> </div>
@@ -162,6 +160,7 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">        std::vector&lt;primitive&gt; net_fwd, net_bwd_data, net_bwd_weights, net_sgd;</div>
 <div class="line">        std::vector&lt;std::unordered_map&lt;int, memory&gt;&gt; net_fwd_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;</div>
 <div class="line"> </div>
+<div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Patch size is: &quot;</span> &lt;&lt; dataset_shape[1] &lt;&lt; <span class="stringliteral">&quot;\n&quot;</span>;</div>
 <div class="line">        <span class="keyword">const</span> <span class="keywordtype">int</span> patch_size = dataset_shape[1];</div>
 <div class="line">        <span class="keyword">const</span> <span class="keywordtype">int</span> stride = 1;</div>
 <div class="line">        <span class="keyword">const</span> <span class="keywordtype">int</span> kernel_size = 5;</div>
@@ -169,14 +168,8 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">        <span class="keyword">const</span> <span class="keywordtype">float</span> learning_rate = config_file[<span class="stringliteral">&quot;learning_rate&quot;</span>];</div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// Compute the padding to preserve the same dimension in input and output</span></div>
-<div class="line">        <span class="comment">// const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;</span></div>
-<div class="line">        <span class="comment">// padding /= 2;</span></div>
-<div class="line">        <span class="keywordtype">int</span> padding = kernel_size - 1;</div>
-<div class="line">        padding /= 1;</div>
-<div class="line"> </div>
-<div class="line">        <span class="comment">// Declare clipping parameters</span></div>
-<div class="line">        <span class="keywordtype">float</span> clip_upper = config_file[<span class="stringliteral">&quot;clip_upper&quot;</span>];</div>
-<div class="line">        <span class="keywordtype">float</span> clip_lower = config_file[<span class="stringliteral">&quot;clip_lower&quot;</span>];</div>
+<div class="line">        <span class="keywordtype">int</span> dilation_factor = config_file[<span class="stringliteral">&quot;dilation_factor&quot;</span>];</div>
+<div class="line">        <span class="keywordtype">int</span> padding = (dilation_factor + 1) * (kernel_size - 1) / 2;</div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// Initialize input and write first batch</span></div>
 <div class="line">        memory::dims input_dim = {batch, 1, patch_size, patch_size};</div>
@@ -191,7 +184,7 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Loaded first batch \n&quot;</span>;</div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// Convolutional layer 1</span></div>
-<div class="line">        <a class="code" href="classConv2D.html">Conv2D</a> conv1(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, </div>
+<div class="line">        <a class="code" href="classConv2D.html">Conv2D</a> conv1(batch, patch_size, n_kernels, kernel_size, stride, padding, dilation_factor, </div>
 <div class="line">                           input_memory, net_fwd, net_fwd_args, eng);</div>
 <div class="line"> </div>
 <div class="line">        <a class="code" href="classEltwise.html">Eltwise</a> relu0(dnnl::algorithm::eltwise_relu, 0.f, 0.f, conv1.arg_dst,</div>
@@ -207,7 +200,7 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line"> </div>
 <div class="line">        <span class="comment">// Convolutional layer 2</span></div>
 <div class="line">        <span class="keywordtype">int</span> n_kernels2 = 64;</div>
-<div class="line">        <a class="code" href="classConv2D.html">Conv2D</a> conv2(batch, maxpool1.arg_dst.get_desc().dims()[2], n_kernels2, kernel_size, stride, padding, 1, </div>
+<div class="line">        <a class="code" href="classConv2D.html">Conv2D</a> conv2(batch, maxpool1.arg_dst.get_desc().dims()[2], n_kernels2, kernel_size, stride, padding, dilation_factor, </div>
 <div class="line">                           maxpool1.arg_dst, net_fwd, net_fwd_args, eng);</div>
 <div class="line"> </div>
 <div class="line">        <a class="code" href="classEltwise.html">Eltwise</a> relu1(dnnl::algorithm::eltwise_relu, 0.f, 0.f, conv2.arg_dst,</div>
@@ -261,16 +254,17 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">                                         fc2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);</div>
 <div class="line">        <a class="code" href="classDense__back__data.html">Dense_back_data</a> fc1_back_data(relu2_back_data.arg_diff_src, fc1, net_bwd_data, net_bwd_data_args, eng);</div>
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Creating maxpool (back)\n&quot;</span>; </div>
-<div class="line">        <a class="code" href="classMaxPool2D__back.html">MaxPool2D_back</a> maxpool2_back_data(pool_kernel, pool_stride, maxpool1, fc1_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);</div>
+<div class="line">        <a class="code" href="classMaxPool2D__back.html">MaxPool2D_back</a> maxpool2_back_data(pool_kernel, pool_stride, maxpool2, fc1_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);</div>
+<div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Creating relu1 (back)\n&quot;</span>;</div>
 <div class="line">        <a class="code" href="classEltwise__back.html">Eltwise_back</a> relu1_back_data(dnnl::algorithm::eltwise_relu, 0.f, 0.f, relu1, </div>
 <div class="line">                                         maxpool2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);</div>
-<div class="line">        <a class="code" href="classConv2D__back__data.html">Conv2D_back_data</a> conv2_back_data(relu1_back_data.arg_diff_src, conv2, stride, padding, 1, </div>
+<div class="line">        <a class="code" href="classConv2D__back__data.html">Conv2D_back_data</a> conv2_back_data(relu1_back_data.arg_diff_src, conv2, stride, padding, dilation_factor, </div>
 <div class="line">                                               net_bwd_data, net_bwd_data_args, eng);</div>
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Creating maxpool (back)\n&quot;</span>; </div>
 <div class="line">        <a class="code" href="classMaxPool2D__back.html">MaxPool2D_back</a> maxpool1_back_data(pool_kernel, pool_stride, maxpool1, conv2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);</div>
 <div class="line">        <a class="code" href="classEltwise__back.html">Eltwise_back</a> relu0_back_data(dnnl::algorithm::eltwise_relu, 0.f, 0.f, relu0, </div>
 <div class="line">                                         maxpool1_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);</div>
-<div class="line">        <a class="code" href="classConv2D__back__data.html">Conv2D_back_data</a> conv1_back_data(relu0_back_data.arg_diff_src, conv1, stride, padding, 1, </div>
+<div class="line">        <a class="code" href="classConv2D__back__data.html">Conv2D_back_data</a> conv1_back_data(relu0_back_data.arg_diff_src, conv1, stride, padding, dilation_factor, </div>
 <div class="line">                                               net_bwd_data, net_bwd_data_args, eng);</div>
 <div class="line"> </div>
 <div class="line">        </div>
@@ -281,10 +275,10 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Creating the first Dense layer (back weights)\n&quot;</span>; </div>
 <div class="line">        <a class="code" href="classDense__back__weights.html">Dense_back_weights</a> fc1_back_weights(relu2_back_data.arg_diff_src, fc1, net_bwd_weights, net_bwd_weights_args, eng);</div>
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Creating the second convolutional layer (back weights)\n&quot;</span>; </div>
-<div class="line">        <a class="code" href="classConv2D__back__weights.html">Conv2D_back_weights</a> conv2_back_weights(relu1_back_data.arg_diff_src , conv2, stride, padding, 1,</div>
+<div class="line">        <a class="code" href="classConv2D__back__weights.html">Conv2D_back_weights</a> conv2_back_weights(relu1_back_data.arg_diff_src , conv2, stride, padding, dilation_factor,</div>
 <div class="line">                                  net_bwd_weights, net_bwd_weights_args, eng);</div>
 <div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;Creating the first convolutional layer (back weights)\n&quot;</span>; </div>
-<div class="line">        <a class="code" href="classConv2D__back__weights.html">Conv2D_back_weights</a> conv1_back_weights(relu0_back_data.arg_diff_src , conv1, stride, padding, 1,</div>
+<div class="line">        <a class="code" href="classConv2D__back__weights.html">Conv2D_back_weights</a> conv1_back_weights(relu0_back_data.arg_diff_src , conv1, stride, padding, dilation_factor,</div>
 <div class="line">                                  net_bwd_weights, net_bwd_weights_args, eng);</div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">//-----------------------------------------------------------------------</span></div>

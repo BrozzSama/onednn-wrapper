@@ -103,9 +103,9 @@ Public Member Functions</h2></td></tr>
 void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classDataLoader.html#a333e4be57bbaaa78f003553e4a4f5632">write_to_memory</a> (dnnl::memory dst_mem_features, dnnl::memory dst_mem_labels)</td></tr>
 <tr class="memdesc:a333e4be57bbaaa78f003553e4a4f5632"><td class="mdescLeft">&#160;</td><td class="mdescRight">Method that writes the curr batch to memory and moves the index forward. <br /></td></tr>
 <tr class="separator:a333e4be57bbaaa78f003553e4a4f5632"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad36b4f42349521f3818b4b0967fd979d"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classDataLoader.html#ad36b4f42349521f3818b4b0967fd979d">DataLoader</a> (std::string features_path, std::string labels_path, int _minibatch_size, std::vector&lt; long &gt; dataset_shape, dnnl::engine _eng)</td></tr>
-<tr class="memdesc:ad36b4f42349521f3818b4b0967fd979d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct a new Data Loader object.  <a href="classDataLoader.html#ad36b4f42349521f3818b4b0967fd979d">More...</a><br /></td></tr>
-<tr class="separator:ad36b4f42349521f3818b4b0967fd979d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aeecfe01f0613b8dc7aa0503934246c65"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classDataLoader.html#aeecfe01f0613b8dc7aa0503934246c65">DataLoader</a> (std::string features_path, std::string labels_path, int _minibatch_size, std::vector&lt; int &gt; dataset_shape, dnnl::engine _eng)</td></tr>
+<tr class="memdesc:aeecfe01f0613b8dc7aa0503934246c65"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct a new Data Loader object.  <a href="classDataLoader.html#aeecfe01f0613b8dc7aa0503934246c65">More...</a><br /></td></tr>
+<tr class="separator:aeecfe01f0613b8dc7aa0503934246c65"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -137,8 +137,8 @@ std::vector&lt; float &gt;&#160;</td><td class="memItemRight" valign="bottom"><a
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p><a class="el" href="classDataLoader.html" title="DataLoader allows to create a dataloader object to implement minibatch stochastic gradient descent.">DataLoader</a> allows to create a dataloader object to implement minibatch stochastic gradient descent. </p>
 </div><h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="ad36b4f42349521f3818b4b0967fd979d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad36b4f42349521f3818b4b0967fd979d">&#9670;&nbsp;</a></span>DataLoader()</h2>
+<a id="aeecfe01f0613b8dc7aa0503934246c65"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aeecfe01f0613b8dc7aa0503934246c65">&#9670;&nbsp;</a></span>DataLoader()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -164,7 +164,7 @@ std::vector&lt; float &gt;&#160;</td><td class="memItemRight" valign="bottom"><a
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype">std::vector&lt; long &gt;&#160;</td>
+          <td class="paramtype">std::vector&lt; int &gt;&#160;</td>
           <td class="paramname"><em>dataset_shape</em>, </td>
         </tr>
         <tr>
