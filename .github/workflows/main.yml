@@ -1,6 +1,6 @@
 # This is a basic workflow to help you get started with Actions
 
-name: CI
+name: Doxygen Deploy
 
 # Controls when the workflow will run
 on:
@@ -24,6 +24,8 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
+        with:
+          submodules: 'true'
 
       - name: Doxygen Action
         uses: mattnotmitt/doxygen-action@v1.3.1
