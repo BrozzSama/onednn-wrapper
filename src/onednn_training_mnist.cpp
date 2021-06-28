@@ -58,18 +58,16 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         stream s(eng);
 
         // MNIST dataset (binary classification, only images corresponding to 0 and 1 were kept)
-        //unsigned long samples = 245057;
-        const long samples = config_file["samples"];
         const long batch = config_file["minibatch_size"];
         // Load dataset
         auto dataset_path = config_file["dataset_path"];
         auto labels_path = config_file["labels_path"];
 
-        std::vector<long> dataset_shape = {samples, 28, 28};      //MNIST dataset
+        std::vector<int> dataset_shape = {1, 28, 28};      //MNIST dataset
 
         // Data loader 
 
-        DataLoader mnist_data(dataset_path, labels_path, samples, batch, dataset_shape, eng);
+        DataLoader mnist_data(dataset_path, labels_path, batch, dataset_shape, eng);
 
         std::cout << "Dataloader instantiated\n";
 
@@ -80,6 +78,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         std::vector<primitive> net_fwd, net_bwd_data, net_bwd_weights, net_sgd;
         std::vector<std::unordered_map<int, memory>> net_fwd_args, net_bwd_data_args, net_bwd_weights_args, net_sgd_args;
 
+        std::cout << "Patch size is: " << dataset_shape[1] << "\n";
         const int patch_size = dataset_shape[1];
         const int stride = 1;
         const int kernel_size = 5;
@@ -87,14 +86,8 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         const float learning_rate = config_file["learning_rate"];
 
         // Compute the padding to preserve the same dimension in input and output
-        // const int padding = (shape[1] - 1) * stride - shape[1] + kernel_size;
-        // padding /= 2;
-        int padding = kernel_size - 1;
-        padding /= 1;
-
-        // Declare clipping parameters
-        float clip_upper = config_file["clip_upper"];
-        float clip_lower = config_file["clip_lower"];
+        int dilation_factor = config_file["dilation_factor"];
+        int padding = (dilation_factor + 1) * (kernel_size - 1) / 2;
 
         // Initialize input and write first batch
         memory::dims input_dim = {batch, 1, patch_size, patch_size};
@@ -109,7 +102,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         std::cout << "Loaded first batch \n";
 
         // Convolutional layer 1
-        Conv2D conv1(batch, patch_size, n_kernels, kernel_size, stride, padding, 1, 
+        Conv2D conv1(batch, patch_size, n_kernels, kernel_size, stride, padding, dilation_factor, 
                            input_memory, net_fwd, net_fwd_args, eng);
 
         Eltwise relu0(dnnl::algorithm::eltwise_relu, 0.f, 0.f, conv1.arg_dst,
@@ -125,7 +118,7 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         // Convolutional layer 2
         int n_kernels2 = 64;
-        Conv2D conv2(batch, maxpool1.arg_dst.get_desc().dims()[2], n_kernels2, kernel_size, stride, padding, 1, 
+        Conv2D conv2(batch, maxpool1.arg_dst.get_desc().dims()[2], n_kernels2, kernel_size, stride, padding, dilation_factor, 
                            maxpool1.arg_dst, net_fwd, net_fwd_args, eng);
 
         Eltwise relu1(dnnl::algorithm::eltwise_relu, 0.f, 0.f, conv2.arg_dst,
@@ -179,16 +172,17 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                                          fc2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
         Dense_back_data fc1_back_data(relu2_back_data.arg_diff_src, fc1, net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating maxpool (back)\n"; 
-        MaxPool2D_back maxpool2_back_data(pool_kernel, pool_stride, maxpool1, fc1_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
+        MaxPool2D_back maxpool2_back_data(pool_kernel, pool_stride, maxpool2, fc1_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
+        std::cout << "Creating relu1 (back)\n";
         Eltwise_back relu1_back_data(dnnl::algorithm::eltwise_relu, 0.f, 0.f, relu1, 
                                          maxpool2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
-        Conv2D_back_data conv2_back_data(relu1_back_data.arg_diff_src, conv2, stride, padding, 1, 
+        Conv2D_back_data conv2_back_data(relu1_back_data.arg_diff_src, conv2, stride, padding, dilation_factor, 
                                                net_bwd_data, net_bwd_data_args, eng);
         std::cout << "Creating maxpool (back)\n"; 
         MaxPool2D_back maxpool1_back_data(pool_kernel, pool_stride, maxpool1, conv2_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
         Eltwise_back relu0_back_data(dnnl::algorithm::eltwise_relu, 0.f, 0.f, relu0, 
                                          maxpool1_back_data.arg_diff_src, net_bwd_data, net_bwd_data_args, eng);
-        Conv2D_back_data conv1_back_data(relu0_back_data.arg_diff_src, conv1, stride, padding, 1, 
+        Conv2D_back_data conv1_back_data(relu0_back_data.arg_diff_src, conv1, stride, padding, dilation_factor, 
                                                net_bwd_data, net_bwd_data_args, eng);
 
         
@@ -199,10 +193,10 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         std::cout << "Creating the first Dense layer (back weights)\n"; 
         Dense_back_weights fc1_back_weights(relu2_back_data.arg_diff_src, fc1, net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Creating the second convolutional layer (back weights)\n"; 
-        Conv2D_back_weights conv2_back_weights(relu1_back_data.arg_diff_src , conv2, stride, padding, 1,
+        Conv2D_back_weights conv2_back_weights(relu1_back_data.arg_diff_src , conv2, stride, padding, dilation_factor,
                                   net_bwd_weights, net_bwd_weights_args, eng);
         std::cout << "Creating the first convolutional layer (back weights)\n"; 
-        Conv2D_back_weights conv1_back_weights(relu0_back_data.arg_diff_src , conv1, stride, padding, 1,
+        Conv2D_back_weights conv1_back_weights(relu0_back_data.arg_diff_src , conv1, stride, padding, dilation_factor,
                                   net_bwd_weights, net_bwd_weights_args, eng);
 
         //-----------------------------------------------------------------------

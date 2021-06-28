@@ -1,0 +1,10 @@
+{
+    "iterations": 5000,
+    "dataset_path": "data/features_mnist.txt",
+    "labels_path": "data/label_mnist.txt",
+    "loss_filename": "data/losses/mnist_loss_cpu.npy",
+    "minibatch_size": 32,
+    "step": 100,
+    "learning_rate": 0.0001, 
+    "dilation_factor": 0
+}

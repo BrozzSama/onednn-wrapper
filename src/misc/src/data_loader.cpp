@@ -1,6 +1,6 @@
 #include "../include/data_loader.h"
 
-DataLoader::DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector<long> dataset_shape, dnnl::engine _eng){
+DataLoader::DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector<int> dataset_shape, dnnl::engine _eng){
     dataset_idx = 0;
     eng = _eng;
 
@@ -13,7 +13,7 @@ DataLoader::DataLoader(std::string features_path, std::string labels_path, int _
     // Prepare batch vector
     sample_size = std::accumulate(std::begin(dataset_shape), std::end(dataset_shape), 1, std::multiplies<int>()); 
     dataset_size = dataset.size()/sample_size;
-    std::cout << "Loaded a dataset of size: " << dataset_size;
+    std::cout << "Loaded a dataset of size: " << dataset_size << "\n";
     if (_minibatch_size == -1){
         minibatch_size = dataset_size;
     }

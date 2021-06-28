@@ -34,7 +34,7 @@ class DataLoader{
          * @param dataset_shape shape of the single sample eg. {C} or {C, H, W}
          * @param _eng oneAPI engine
          */
-        DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector<long> dataset_shape, dnnl::engine _eng);
+        DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector<int> dataset_shape, dnnl::engine _eng);
     private:
         int dataset_idx, sample_size;
         void load_from_file(std::string filename, std::vector<float> &data); //!< Helper method which loads the files
