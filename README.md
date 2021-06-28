@@ -1,6 +1,8 @@
 oneDNN Wrapper 
 ===============
 
+Authors: Francesco BROZZU, Paolo VOLPE
+
 oneDNN wrapper is a project written in C++ which "wraps" oneDNN primitive into simpler and more usable classes, in order to implement Deep Neural Networks in a way that is more similar to TensorFlow or Pytorch. 
 
 Getting Started
