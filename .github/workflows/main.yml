@@ -25,14 +25,14 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
-      # Runs a single command using the runners shell
       - name: Doxygen Action
         uses: mattnotmitt/doxygen-action@v1.3.1
+        with:
+          doxyfile-path: 'config_doxygen'
 
-      # Runs a set of commands using the runners shell
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         if: github.ref == 'refs/heads/main'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
+          publish_dir: ./html
