@@ -31,7 +31,7 @@ class DataLoader{
          * @param features_path path to the text file containing the flattened features (in row-major order)
          * @param labels_path path to the labels corresponding to the features
          * @param _minibatch_size size of the minibatch (-1 for full batch)
-         * @param dataset_shape shape of the single sample eg. {C} or {C, H, W}
+         * @param dataset_shape shape of the single sample eg. {C} or {C, H, W}, the N will be stored in the dataset_size variable
          * @param _eng oneAPI engine
          */
         DataLoader(std::string features_path, std::string labels_path, int _minibatch_size, std::vector<int> dataset_shape, dnnl::engine _eng);

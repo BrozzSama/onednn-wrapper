@@ -51,9 +51,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         else
                 std::cout << "Unable to open file"; 
 
-        // RNG for ALL purposes
-        std::default_random_engine generator;
-
         auto eng = engine(engine_kind, 0);
         stream s(eng);
 
@@ -245,19 +242,17 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
 
         int max_iter = config_file["iterations"]; // number of iterations for training
         int n_iter = 0;
+        int loss_history_cnt = 0;
         int step = config_file["step"];
 
         // Prepare memory that will host loss
-        std::vector<float> curr_loss_diff(batch);
+        std::vector<float> curr_loss_diff(product(maxpool2.arg_dst.get_desc().dims()));
         float curr_loss;
         std::vector<float> loss_history((int)max_iter/step);
         
         //unsigned long batch_size = batch;
         unsigned long batch_size = max_iter/step;
         const unsigned long loss_dim [] = {batch_size};
-
-        //s.wait();
-        //print_vector2(curr_loss);
 
         // execute
         while (n_iter < max_iter)
@@ -292,9 +287,14 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
                 
 
                 if (n_iter % step == 0){  
+                        read_from_dnnl_memory(&curr_loss, loss.arg_dst);  
+                        print_vector(loss_back.arg_dst.get_desc().dims());
+                        std::cout << "Curr loss diff size: " << curr_loss_diff.size() << "\n";
+                        read_from_dnnl_memory(curr_loss_diff.data(), maxpool2.arg_dst);
                         s.wait();
-                        read_from_dnnl_memory(&curr_loss, loss.arg_dst);                        
-                        loss_history[(int)n_iter/step] = curr_loss;
+                        print_vector2(curr_loss_diff, curr_loss_diff.size());                      
+                        loss_history[loss_history_cnt++] = curr_loss;
+                        
                 }
 
                 // Change data

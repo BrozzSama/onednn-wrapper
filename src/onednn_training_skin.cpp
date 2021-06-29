@@ -51,9 +51,6 @@ void simple_net(engine::kind engine_kind, int argc, char** argv)
         else
                 std::cout << "Unable to open file"; 
 
-        // RNG for ALL purposes
-        std::default_random_engine generator;
-
         // Open oneAPI engine
         auto eng = engine(engine_kind, 0);
         stream s(eng);
