@@ -133,9 +133,6 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">        <span class="keywordflow">else</span></div>
 <div class="line">                std::cout &lt;&lt; <span class="stringliteral">&quot;Unable to open file&quot;</span>; </div>
 <div class="line"> </div>
-<div class="line">        <span class="comment">// RNG for ALL purposes</span></div>
-<div class="line">        std::default_random_engine generator;</div>
-<div class="line"> </div>
 <div class="line">        <span class="keyword">auto</span> eng = engine(engine_kind, 0);</div>
 <div class="line">        stream s(eng);</div>
 <div class="line"> </div>
@@ -327,19 +324,17 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line"> </div>
 <div class="line">        <span class="keywordtype">int</span> max_iter = config_file[<span class="stringliteral">&quot;iterations&quot;</span>]; <span class="comment">// number of iterations for training</span></div>
 <div class="line">        <span class="keywordtype">int</span> n_iter = 0;</div>
+<div class="line">        <span class="keywordtype">int</span> loss_history_cnt = 0;</div>
 <div class="line">        <span class="keywordtype">int</span> step = config_file[<span class="stringliteral">&quot;step&quot;</span>];</div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// Prepare memory that will host loss</span></div>
-<div class="line">        std::vector&lt;float&gt; curr_loss_diff(batch);</div>
+<div class="line">        std::vector&lt;float&gt; curr_loss_diff(product(maxpool2.arg_dst.get_desc().dims()));</div>
 <div class="line">        <span class="keywordtype">float</span> curr_loss;</div>
 <div class="line">        std::vector&lt;float&gt; loss_history((<span class="keywordtype">int</span>)max_iter/step);</div>
 <div class="line">        </div>
 <div class="line">        <span class="comment">//unsigned long batch_size = batch;</span></div>
 <div class="line">        <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> batch_size = max_iter/step;</div>
 <div class="line">        <span class="keyword">const</span> <span class="keywordtype">unsigned</span> <span class="keywordtype">long</span> loss_dim [] = {batch_size};</div>
-<div class="line"> </div>
-<div class="line">        <span class="comment">//s.wait();</span></div>
-<div class="line">        <span class="comment">//print_vector2(curr_loss);</span></div>
 <div class="line"> </div>
 <div class="line">        <span class="comment">// execute</span></div>
 <div class="line">        <span class="keywordflow">while</span> (n_iter &lt; max_iter)</div>
@@ -374,9 +369,14 @@ $(document).ready(function(){initNavTree('onednn_training_mnist.html',''); initR
 <div class="line">                </div>
 <div class="line"> </div>
 <div class="line">                <span class="keywordflow">if</span> (n_iter % step == 0){  </div>
+<div class="line">                        read_from_dnnl_memory(&amp;curr_loss, loss.arg_dst);  </div>
+<div class="line">                        print_vector(loss_back.arg_dst.get_desc().dims());</div>
+<div class="line">                        std::cout &lt;&lt; <span class="stringliteral">&quot;Curr loss diff size: &quot;</span> &lt;&lt; curr_loss_diff.size() &lt;&lt; <span class="stringliteral">&quot;\n&quot;</span>;</div>
+<div class="line">                        read_from_dnnl_memory(curr_loss_diff.data(), maxpool2.arg_dst);</div>
 <div class="line">                        s.wait();</div>
-<div class="line">                        read_from_dnnl_memory(&amp;curr_loss, loss.arg_dst);                        </div>
-<div class="line">                        loss_history[(int)n_iter/step] = curr_loss;</div>
+<div class="line">                        print_vector2(curr_loss_diff, curr_loss_diff.size());                      </div>
+<div class="line">                        loss_history[loss_history_cnt++] = curr_loss;</div>
+<div class="line">                        </div>
 <div class="line">                }</div>
 <div class="line"> </div>
 <div class="line">                <span class="comment">// Change data</span></div>
