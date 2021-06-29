@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['primitives_83',['Primitives',['../md_PRIMITIVES.html',1,'']]]
+  ['onednn_20wrapper_84',['oneDNN Wrapper',['../index.html',1,'']]]
 ];

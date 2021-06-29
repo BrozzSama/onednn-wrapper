@@ -1,6 +1,5 @@
 var searchData=
 [
-  ['maxpool2d_27',['MaxPool2D',['../classMaxPool2D.html',1,'MaxPool2D'],['../classMaxPool2D.html#a89ad7b2f08abc732c4590f32607e7796',1,'MaxPool2D::MaxPool2D()']]],
-  ['maxpool2d_5fback_28',['MaxPool2D_back',['../classMaxPool2D__back.html',1,'MaxPool2D_back'],['../classMaxPool2D__back.html#a9241156fece3d431b1bb5ffb03872df2',1,'MaxPool2D_back::MaxPool2D_back()']]],
-  ['minibatch_5fsize_29',['minibatch_size',['../classDataLoader.html#ab25bdff87e99e6f627db9d6a29d0b67c',1,'DataLoader']]]
+  ['l2_5floss_26',['L2_Loss',['../classL2__Loss.html',1,'L2_Loss'],['../classL2__Loss.html#a3a89522c815c48caefe4a3ccefa23f00',1,'L2_Loss::L2_Loss()']]],
+  ['l2_5floss_5fback_27',['L2_Loss_back',['../classL2__Loss__back.html',1,'L2_Loss_back'],['../classL2__Loss__back.html#a91c7e91223f44287e34b22fd9d1fecca',1,'L2_Loss_back::L2_Loss_back()']]]
 ];

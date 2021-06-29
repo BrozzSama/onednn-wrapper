@@ -57,6 +57,7 @@ var NAVTREE =
       [ "Building", "md_BUILD.html#autotoc_md22", null ],
       [ "Running", "md_BUILD.html#autotoc_md23", null ]
     ] ],
+    [ "Issues and To-do list", "md_ISSUES.html", null ],
     [ "CNN example using oneDNN wrapper", "onednn_training_mnist.html", null ],
     [ "Fully Connected Layer Training", "fc_training_skin.html", null ],
     [ "Classes", "annotated.html", [

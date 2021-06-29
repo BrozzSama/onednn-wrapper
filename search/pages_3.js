@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['onednn_20wrapper_82',['oneDNN Wrapper',['../index.html',1,'']]]
+  ['issues_20and_20to_2ddo_20list_83',['Issues and To-do list',['../md_ISSUES.html',1,'']]]
 ];
